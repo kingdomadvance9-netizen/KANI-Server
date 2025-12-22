@@ -150,11 +150,11 @@ PostgreSQL (Neon)
 🔐 Environment Variables
 Backend (server/.env)
 DATABASE_URL=postgresql://...
-PORT=4000
+PORT=8080
 NODE_ENV=development
 
 Frontend (.env.local)
-NEXT_PUBLIC_SOCKET_URL=http://localhost:4000
+NEXT_PUBLIC_SOCKET_URL=http://localhost:8080
 
 🚀 Running Locally
 1️⃣ Backend
@@ -165,7 +165,7 @@ npm run dev
 
 Server runs on:
 
-http://localhost:4000
+http://localhost:8080
 
 2️⃣ Frontend
 npm install
