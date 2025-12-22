@@ -2,11 +2,11 @@
   "name": "server",
   "version": "1.0.0",
   "main": "index.js",
-"scripts": {
-  "dev": "nodemon --exec ts-node index.ts",
-  "start": "ts-node index.ts",
-  "postinstall": "prisma generate"
-},
+  "scripts": {
+    "dev": "nodemon --exec ts-node index.ts",
+    "start": "ts-node index.ts",
+    "postinstall": "prisma generate"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
