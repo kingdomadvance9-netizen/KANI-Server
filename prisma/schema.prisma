@@ -13,7 +13,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  
+  url      = env("DATABASE_URL")
 }
 
 
@@ -44,4 +44,27 @@ model Reaction {
   message   Message @relation(fields: [messageId], references: [id])
 
   @@unique([messageId, userId])
+}
+
+
+model Room {
+  id          String            @id @default(uuid())
+  createdAt   DateTime          @default(now())
+  creatorId   String            // Clerk User ID
+  participants RoomParticipant[]
+}
+
+model RoomParticipant {
+  id             String   @id @default(uuid())
+  roomId         String
+  userId         String   // Clerk User ID
+  name           String
+  imageUrl       String?
+  role           String   @default("PARTICIPANT") // "HOST" or "PARTICIPANT"
+  isAudioMuted   Boolean  @default(false)
+  isVideoPaused  Boolean  @default(false)
+  
+  room           Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
 }
