@@ -499,10 +499,11 @@ io.on("connection", (socket) => {
             `⚠️ ${userName} already joined - ignoring duplicate call`
           );
 
-          // ✅ FIXED: Still return existing producers with full details
+          // ✅ FIXED: Still return existing producers with full details including userId
           const existingProducers: Array<{
             producerId: string;
             peerId: string;
+            userId: string;
             kind: string;
             isScreenShare: boolean;
           }> = [];
@@ -512,6 +513,7 @@ io.on("connection", (socket) => {
                 existingProducers.push({
                   producerId: producer.id,
                   peerId: peerId,
+                  userId: peer.userId || peerId, // Include userId for proper mapping
                   kind: producer.kind,
                   isScreenShare: producer.appData?.share === true,
                 });
@@ -606,6 +608,7 @@ io.on("connection", (socket) => {
         // ✅ CRITICAL: Create peer with user info from client
         room.peers.set(socket.id, {
           socketId: socket.id,
+          userId: userId, // Store userId for proper mapping
           name: userName || "User " + socket.id.slice(0, 4),
           imageUrl: userImageUrl || null,
           isHost: shouldBeHost,
@@ -615,10 +618,11 @@ io.on("connection", (socket) => {
           rtpCapabilities,
         });
 
-        // ✅ FIXED: Include peerId and producer details for existing producers
+        // ✅ FIXED: Include peerId, userId and producer details for existing producers
         const existingProducers: Array<{
           producerId: string;
           peerId: string;
+          userId: string;
           kind: string;
           isScreenShare: boolean;
         }> = [];
@@ -628,6 +632,7 @@ io.on("connection", (socket) => {
               existingProducers.push({
                 producerId: producer.id,
                 peerId: peerId,
+                userId: peer.userId || peerId, // Include userId for proper mapping
                 kind: producer.kind,
                 isScreenShare: producer.appData?.share === true,
               });
@@ -858,13 +863,16 @@ io.on("connection", (socket) => {
           }`
         );
 
-        // ✅ CRITICAL: Include peerId and screen share info
-        socket.to(roomId).emit("new-producer", {
+        // ✅ CRITICAL: Include peerId, userId and screen share info
+        const producerEvent = {
           producerId: producer.id,
           peerId: socket.id,
+          userId: peer.userId || socket.id, // Include userId for proper stream mapping
           kind,
           isScreenShare,
-        });
+        };
+        console.log("📡 Emitting new-producer:", producerEvent);
+        socket.to(roomId).emit("new-producer", producerEvent);
 
         cb({ id: producer.id });
       } catch (err: any) {
@@ -986,18 +994,25 @@ io.on("connection", (socket) => {
         `✅ Consumer created: ${consumer.id} for producer ${producerId} (${consumer.kind}) from peer ${producerPeerId}`
       );
 
-      // ✅ CRITICAL: Include peerId so client knows whose stream this is
+      // ✅ CRITICAL: Include userId so client knows whose stream this is
+      const producerPeer = room.peers.get(producerPeerId);
       const response = {
         id: consumer.id,
         producerId,
         kind: consumer.kind,
         rtpParameters: consumer.rtpParameters,
         peerId: producerPeerId,
+        userId: producerPeer?.userId || producerPeerId, // Send userId for proper mapping
         producerSocketId: producerPeerId,
         isScreenShare: producer.appData?.share === true,
       };
 
-      console.log("📤 Consumer response sent");
+      console.log("📤 Consumer response:", {
+        consumerId: response.id,
+        kind: response.kind,
+        userId: response.userId,
+        peerId: response.peerId,
+      });
       cb(response);
     } catch (err: any) {
       console.error("❌ Error in consume:", err);
