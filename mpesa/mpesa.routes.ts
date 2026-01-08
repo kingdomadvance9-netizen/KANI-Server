@@ -100,10 +100,10 @@ router.post("/initiate", async (req: Request, res: Response) => {
  */
 router.post("/callback", async (req: Request, res: Response) => {
   try {
-    console.log(
-      "📲 M-Pesa Callback Received:",
-      JSON.stringify(req.body, null, 2)
-    );
+    console.log("=".repeat(60));
+    console.log("📲 M-Pesa Callback Received at:", new Date().toISOString());
+    console.log("📲 M-Pesa Callback Body:", JSON.stringify(req.body, null, 2));
+    console.log("=".repeat(60));
 
     const { Body } = req.body;
 
@@ -122,8 +122,18 @@ router.post("/callback", async (req: Request, res: Response) => {
     // Get pending transaction details
     const pendingTxn = pendingTransactions.get(CheckoutRequestID);
 
+    console.log(`🔍 Looking for pending transaction: ${CheckoutRequestID}`);
+    console.log(
+      `📦 Pending transactions map size: ${pendingTransactions.size}`
+    );
+    console.log(`📋 Pending transaction found:`, pendingTxn ? "YES" : "NO");
+
     if (!pendingTxn) {
       console.warn("⚠️ Pending transaction not found:", CheckoutRequestID);
+      console.warn(
+        "⚠️ Available transactions:",
+        Array.from(pendingTransactions.keys())
+      );
       return res.status(200).json({ ResultCode: 0, ResultDesc: "Success" });
     }
 
@@ -181,6 +191,7 @@ router.post("/callback", async (req: Request, res: Response) => {
           transaction.userName || "N/A"
         }`
       );
+      console.log(`💾 Transaction saved to DB with ID: ${transaction.id}`);
     } else {
       // Failed or Cancelled - Just log, don't save to database
       const status = ResultCode === 1032 ? "CANCELLED" : "FAILED";
@@ -191,6 +202,7 @@ router.post("/callback", async (req: Request, res: Response) => {
 
     // Remove from pending transactions
     pendingTransactions.delete(CheckoutRequestID);
+    console.log(`🗑️ Removed ${CheckoutRequestID} from pending transactions`);
 
     return res.status(200).json({ ResultCode: 0, ResultDesc: "Success" });
   } catch (error: any) {
@@ -208,6 +220,7 @@ router.get(
   async (req: Request, res: Response) => {
     try {
       const { checkoutRequestId } = req.params;
+      console.log(`🔍 Status check for: ${checkoutRequestId}`);
 
       // First check if transaction exists in database (payment confirmed)
       const transaction = await prisma.mpesaTransaction.findUnique({
@@ -216,6 +229,7 @@ router.get(
 
       if (transaction) {
         // Transaction found in DB - payment was successful
+        console.log(`✅ Found in DB - Status: SUCCESS`);
         return res.status(200).json({
           success: true,
           status: "SUCCESS",
@@ -228,6 +242,7 @@ router.get(
 
       if (pendingTxn) {
         // Still waiting for user to complete payment
+        console.log(`⏳ Still pending - waiting for callback`);
         return res.status(200).json({
           success: true,
           status: "PENDING",
@@ -243,6 +258,7 @@ router.get(
       }
 
       // Not found in either - either expired, cancelled, or failed
+      console.log(`❌ Not found - likely expired or failed`);
       return res.status(404).json({
         success: false,
         status: "NOT_FOUND",
