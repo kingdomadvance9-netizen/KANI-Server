@@ -30,6 +30,7 @@ export class MpesaService {
     ).toString("base64");
 
     try {
+      console.log("🔑 Requesting M-Pesa access token...");
       const response = await axios.get(
         `${this.baseUrl}/oauth/v1/generate?grant_type=client_credentials`,
         {
@@ -39,11 +40,12 @@ export class MpesaService {
         }
       );
 
+      console.log("✅ M-Pesa access token received");
       return response.data.access_token;
     } catch (error: any) {
       console.error(
         "❌ M-Pesa Token Error:",
-        error.response?.data || error.message
+        JSON.stringify(error.response?.data || error.message, null, 2)
       );
       throw new Error("Failed to get M-Pesa access token");
     }
@@ -98,6 +100,18 @@ export class MpesaService {
       TransactionDesc: transactionDesc,
     };
 
+    console.log(
+      "📤 M-Pesa STK Request:",
+      JSON.stringify(
+        {
+          url: `${this.baseUrl}/mpesa/stkpush/v1/processrequest`,
+          payload: { ...payload, Password: "***HIDDEN***" },
+        },
+        null,
+        2
+      )
+    );
+
     try {
       const response = await axios.post(
         `${this.baseUrl}/mpesa/stkpush/v1/processrequest`,
@@ -110,11 +124,15 @@ export class MpesaService {
         }
       );
 
+      console.log(
+        "✅ M-Pesa STK Response:",
+        JSON.stringify(response.data, null, 2)
+      );
       return response.data;
     } catch (error: any) {
       console.error(
         "❌ M-Pesa STK Push Error:",
-        error.response?.data || error.message
+        JSON.stringify(error.response?.data || error.message, null, 2)
       );
       throw new Error(error.response?.data?.errorMessage || "STK Push failed");
     }
