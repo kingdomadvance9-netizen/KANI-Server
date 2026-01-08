@@ -36,8 +36,9 @@ export const MpesaPaymentModal: React.FC<MpesaPaymentModalProps> = ({
     setLoading(true);
 
     try {
-      const apiUrl =
-        process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8080";
+      const apiUrl = (
+        process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8080"
+      ).replace(/\/$/, ""); // Remove trailing slash
       const response = await fetch(`${apiUrl}/api/mpesa/initiate`, {
         method: "POST",
         headers: {
@@ -81,8 +82,9 @@ export const MpesaPaymentModal: React.FC<MpesaPaymentModalProps> = ({
 
     const checkStatus = async () => {
       try {
-        const apiUrl =
-          process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8080";
+        const apiUrl = (
+          process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8080"
+        ).replace(/\/$/, ""); // Remove trailing slash
         const response = await fetch(
           `${apiUrl}/api/mpesa/status/${checkoutReqId}`
         );

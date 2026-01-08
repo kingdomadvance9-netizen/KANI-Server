@@ -160,8 +160,12 @@ router.post("/callback", async (req: Request, res: Response) => {
           (item: any) => item.Name === "TransactionDate"
         )?.Value;
 
+        console.log(
+          `📝 Existing transaction found. Receipt: ${mpesaReceiptNumber}, Date: ${transactionDate}`
+        );
+
         if (mpesaReceiptNumber || transactionDate) {
-          await prisma.mpesaTransaction.update({
+          const updated = await prisma.mpesaTransaction.update({
             where: { checkoutRequestId: CheckoutRequestID },
             data: {
               mpesaReceiptNumber:
@@ -172,10 +176,10 @@ router.post("/callback", async (req: Request, res: Response) => {
             },
           });
           console.log(
-            `✅ Updated transaction with receipt: ${mpesaReceiptNumber}`
+            `✅ Updated transaction ${updated.id} with receipt: ${mpesaReceiptNumber}`
           );
         } else {
-          console.log("✅ Transaction already in DB, no new data to update");
+          console.log("⚠️ No receipt or date in callback metadata");
         }
 
         return res.status(200).json({ ResultCode: 0, ResultDesc: "Success" });
@@ -194,7 +198,7 @@ router.post("/callback", async (req: Request, res: Response) => {
       );
 
       // Still process the callback even without pending transaction
-      // Use phone number from callback as identifier
+      // Extract receipt from callback and save
       if (ResultCode === 0) {
         const metadata = CallbackMetadata?.Item || [];
         const mpesaReceiptNumber = metadata.find(
@@ -210,8 +214,8 @@ router.post("/callback", async (req: Request, res: Response) => {
           (item: any) => item.Name === "Amount"
         )?.Value;
 
-        // Save without userId (will be updated later if needed)
-        await prisma.mpesaTransaction.create({
+        // Save with receipt data even without pending transaction
+        const transaction = await prisma.mpesaTransaction.create({
           data: {
             userId: "UNKNOWN",
             userName: null,
@@ -220,7 +224,7 @@ router.post("/callback", async (req: Request, res: Response) => {
             accountReference: "UNKNOWN",
             merchantRequestId: MerchantRequestID,
             checkoutRequestId: CheckoutRequestID,
-            mpesaReceiptNumber,
+            mpesaReceiptNumber: mpesaReceiptNumber || null,
             transactionDate: transactionDate
               ? new Date(String(transactionDate))
               : null,
@@ -231,8 +235,9 @@ router.post("/callback", async (req: Request, res: Response) => {
         });
 
         console.log(
-          `✅ Payment saved without pending txn - Receipt: ${mpesaReceiptNumber}`
+          `✅ Payment saved without pending txn - Receipt: ${mpesaReceiptNumber}, Amount: KES ${paidAmount}`
         );
+        console.log(`💾 Transaction ID: ${transaction.id}`);
       }
 
       return res.status(200).json({ ResultCode: 0, ResultDesc: "Success" });
@@ -412,6 +417,19 @@ router.get(
                 success: false,
                 status: "CANCELLED",
                 message: "Payment was cancelled",
+              });
+            } else {
+              // Any other error code (like 2001, etc.)
+              pendingTransactions.delete(checkoutRequestId);
+              console.log(
+                `❌ Payment failed - ResultCode: ${queryResult.ResultCode}, ${queryResult.ResultDesc}`
+              );
+
+              return res.status(200).json({
+                success: false,
+                status: "FAILED",
+                message: queryResult.ResultDesc || "Payment failed",
+                errorCode: queryResult.ResultCode,
               });
             }
           } catch (queryError: any) {
