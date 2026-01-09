@@ -2,7 +2,7 @@ import React, { useState } from "react";
 
 interface MpesaPaymentModalProps {
   userId: string;
-  userName?: string; // Optional: Pass from Clerk/auth provider
+  userName?: string;
   onSuccess?: (transactionId: string) => void;
   onError?: (error: string) => void;
   onClose?: () => void;
@@ -25,10 +25,10 @@ export const MpesaPaymentModal: React.FC<MpesaPaymentModalProps> = ({
   );
 
   const accountOptions = [
-    { value: "ROOM_PAYMENT", label: "Room Payment" },
-    { value: "SUBSCRIPTION", label: "Subscription" },
-    { value: "CREDITS", label: "Buy Credits" },
-    { value: "DONATION", label: "Donation" },
+    { value: "OFFERING", label: "Offering" },
+    { value: "TITHE", label: "Tithe" },
+    { value: "PARTNERSHIP", label: "Partnership" },
+    { value: "MISSIONS", label: "Missions" },
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {

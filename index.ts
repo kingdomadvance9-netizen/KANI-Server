@@ -805,7 +805,10 @@ io.on("connection", (socket) => {
                   peerId: peerId,
                   userId: peer.userId || peerId, // Include userId for proper mapping
                   kind: producer.kind,
-                  isScreenShare: producer.appData?.share === true,
+                  isScreenShare:
+                    producer.appData?.share ||
+                    producer.appData?.isScreenShare ||
+                    false,
                 });
               });
             }
@@ -924,7 +927,10 @@ io.on("connection", (socket) => {
                 peerId: peerId,
                 userId: peer.userId || peerId, // Include userId for proper mapping
                 kind: producer.kind,
-                isScreenShare: producer.appData?.share === true,
+                isScreenShare:
+                  producer.appData?.share ||
+                  producer.appData?.isScreenShare ||
+                  false,
               });
             });
           }
@@ -1115,10 +1121,18 @@ io.on("connection", (socket) => {
           return cb({ error: "Peer not found" });
         }
 
+        // ✅ Store screen share metadata in producer's appData
+        const producerAppData = {
+          ...appData,
+          media: kind,
+          share: appData?.share || false,
+          isScreenShare: appData?.share || false,
+        };
+
         const producer = await transport.produce({
           kind,
           rtpParameters,
-          appData: appData || { media: kind },
+          appData: producerAppData,
         });
 
         peer.producers.set(producer.id, producer);
@@ -1144,7 +1158,8 @@ io.on("connection", (socket) => {
           console.log(`📊 Producer ${producer.id} score:`, score);
         });
 
-        const isScreenShare = appData?.share === true;
+        const isScreenShare =
+          producer.appData?.share || producer.appData?.isScreenShare || false;
         const emoji = kind === "audio" ? "🎤" : isScreenShare ? "🖥️" : "📹";
 
         console.log(
@@ -1284,17 +1299,21 @@ io.on("connection", (socket) => {
         `✅ Consumer created: ${consumer.id} for producer ${producerId} (${consumer.kind}) from peer ${producerPeerId}`
       );
 
-      // ✅ CRITICAL: Include userId so client knows whose stream this is
+      // ✅ CRITICAL: Include userId and screen share flag so client knows whose stream this is
       const producerPeer = room.peers.get(producerPeerId);
       const response = {
-        id: consumer.id,
         producerId,
+        id: consumer.id,
         kind: consumer.kind,
         rtpParameters: consumer.rtpParameters,
+        type: consumer.type,
+        producerPaused: consumer.producerPaused,
         peerId: producerPeerId,
         userId: producerPeer?.userId || producerPeerId, // Send userId for proper mapping
         producerSocketId: producerPeerId,
-        isScreenShare: producer.appData?.share === true,
+        isScreenShare:
+          producer.appData?.share || producer.appData?.isScreenShare || false,
+        appData: producer.appData,
       };
 
       console.log("📤 Consumer response:", {
@@ -1356,19 +1375,83 @@ io.on("connection", (socket) => {
         return cb?.({ error: "Producer not found" });
       }
 
+      // Extract metadata before closing
+      const isScreenShare =
+        producer.appData?.share || producer.appData?.isScreenShare || false;
+      const kind = producer.kind;
+
+      // ✅ Close producer - mediasoup will automatically close all consumers
       producer.close();
       peer.producers.delete(producerId);
 
-      // Notify other peers that this producer is closed
-      socket.to(roomId).emit("producer-closed", {
+      // ✅ Notify other peers with consistent event
+      io.to(roomId).emit("producer-closed", {
         producerId,
         peerId: socket.id,
+        userId: peer.userId || socket.id,
+        isScreenShare,
+        kind,
       });
 
-      console.log(`🔴 Producer ${producerId} closed by ${socket.id}`);
+      const emoji = kind === "audio" ? "🎤" : isScreenShare ? "🖥️" : "📹";
+      console.log(
+        `${emoji} Producer ${producerId} closed by ${socket.id}${
+          isScreenShare ? " (screen share)" : ""
+        }`
+      );
+
       cb?.({ success: true });
     } catch (err: any) {
       console.error("❌ Error closing producer:", err);
+      cb?.({ error: err.message });
+    }
+  });
+
+  // ✅ Handle screen share stopped - follows mediasoup best practices
+  socket.on("screen-share-stopped", async ({ roomId, producerId }, cb) => {
+    try {
+      const room = await getOrCreateRoom(roomId);
+      const peer = room.peers.get(socket.id);
+      const producer = peer?.producers.get(producerId);
+
+      if (!peer) {
+        console.error(`❌ Peer ${socket.id} not found`);
+        return cb?.({ error: "Peer not found" });
+      }
+
+      if (!producer) {
+        console.error(`❌ Screen share producer ${producerId} not found`);
+        return cb?.({ error: "Producer not found" });
+      }
+
+      // Extract screen share flag before closing
+      const isScreenShare =
+        producer.appData?.share || producer.appData?.isScreenShare || false;
+
+      // ✅ ONLY close the producer - DO NOT manually close consumers
+      // mediasoup will automatically trigger "producerclose" event on all consumers
+      producer.close();
+      peer.producers.delete(producerId);
+
+      // ✅ Emit consistent "producer-closed" event (same as camera)
+      // This ensures all media removal follows the same code path
+      io.to(roomId).emit("producer-closed", {
+        producerId,
+        peerId: socket.id,
+        userId: peer.userId || socket.id,
+        isScreenShare, // Flag to differentiate screen share from camera
+      });
+
+      const emoji = isScreenShare ? "🖥️" : "🔴";
+      console.log(
+        `${emoji} Producer ${producerId} closed by ${socket.id}${
+          isScreenShare ? " (screen share)" : ""
+        }`
+      );
+
+      cb?.({ success: true });
+    } catch (err: any) {
+      console.error("❌ Error stopping screen share:", err);
       cb?.({ error: err.message });
     }
   });

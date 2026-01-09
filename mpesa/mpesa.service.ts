@@ -91,7 +91,7 @@ export class MpesaService {
       Password: password,
       Timestamp: timestamp,
       TransactionType: "CustomerPayBillOnline",
-      Amount: Math.round(amount), // M-Pesa doesn't accept decimals
+      Amount: Math.round(amount), 
       PartyA: formattedPhone,
       PartyB: this.config.shortCode,
       PhoneNumber: formattedPhone,
