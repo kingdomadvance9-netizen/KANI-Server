@@ -173,6 +173,31 @@ io.on("connection", (socket) => {
           console.log(`♻️ ${userName} rejoined (EXISTING)`);
         }
 
+        // ✅ Create or update in-memory peer with host status
+        const mediasoupRoom = await getOrCreateRoom(roomId);
+        const peer = {
+          socketId: socket.id,
+          userId: userId,
+          name: userName,
+          imageUrl: userImageUrl,
+          isHost: participant.role === "HOST",
+          isCoHost: participant.role === "COHOST",
+          producers: new Map(),
+          consumers: new Map(),
+          transports: new Map(),
+        };
+
+        mediasoupRoom.peers.set(socket.id, peer);
+
+        console.log(`👤 Peer added to room.peers:`, {
+          socketId: socket.id,
+          userId,
+          name: userName,
+          role: participant.role,
+          isHost: peer.isHost,
+          isCoHost: peer.isCoHost,
+        });
+
         // Fetch all active participants
         const participants = await prisma.roomParticipant.findMany({
           where: { roomId },
@@ -192,6 +217,7 @@ io.on("connection", (socket) => {
             isAudioMuted: p.isAudioMuted,
             isVideoPaused: p.isVideoPaused,
             isHost: p.role === "HOST",
+            isCoHost: p.role === "COHOST",
           }))
         );
 
@@ -322,13 +348,16 @@ io.on("connection", (socket) => {
 
   socket.on("mute-all-participants", async ({ roomId, userId }: any) => {
     try {
-      // Check if requester is HOST
+      // Check if requester is HOST or COHOST
       const requester = await prisma.roomParticipant.findUnique({
         where: { roomId_userId: { roomId, userId } },
       });
 
-      if (!requester || requester.role !== "HOST") {
-        console.log(`❌ ${userId} tried to mute all but is not HOST`);
+      if (
+        !requester ||
+        (requester.role !== "HOST" && requester.role !== "COHOST")
+      ) {
+        console.log(`❌ ${userId} tried to mute all but is not HOST or COHOST`);
         return;
       }
 
@@ -378,13 +407,18 @@ io.on("connection", (socket) => {
 
   socket.on("unmute-all-participants", async ({ roomId, userId }: any) => {
     try {
-      // Check if requester is HOST
+      // Check if requester is HOST or COHOST
       const requester = await prisma.roomParticipant.findUnique({
         where: { roomId_userId: { roomId, userId } },
       });
 
-      if (!requester || requester.role !== "HOST") {
-        console.log(`❌ ${userId} tried to unmute all but is not HOST`);
+      if (
+        !requester ||
+        (requester.role !== "HOST" && requester.role !== "COHOST")
+      ) {
+        console.log(
+          `❌ ${userId} tried to unmute all but is not HOST or COHOST`
+        );
         return;
       }
 
@@ -434,14 +468,17 @@ io.on("connection", (socket) => {
 
   socket.on("disable-all-cameras", async ({ roomId, userId }: any) => {
     try {
-      // Check if requester is HOST
+      // Check if requester is HOST or COHOST
       const requester = await prisma.roomParticipant.findUnique({
         where: { roomId_userId: { roomId, userId } },
       });
 
-      if (!requester || requester.role !== "HOST") {
+      if (
+        !requester ||
+        (requester.role !== "HOST" && requester.role !== "COHOST")
+      ) {
         console.log(
-          `❌ ${userId} tried to disable all cameras but is not HOST`
+          `❌ ${userId} tried to disable all cameras but is not HOST or COHOST`
         );
         return;
       }
@@ -890,12 +927,68 @@ io.on("connection", (socket) => {
         // ====== MEDIASOUP SETUP ======
         socket.join(roomId);
 
-        // ✅ If room is empty, first person becomes host automatically
-        const isFirstPerson = room.peers.size === 0;
-        const shouldBeHost = isCreator === true || isFirstPerson;
+        // ✅ Check if peer already has host status set (from join-room)
+        const previousPeer = room.peers.get(socket.id);
+        let shouldBeHost = false;
+        let shouldBeCoHost = false;
+
+        if (previousPeer && (previousPeer.isHost || previousPeer.isCoHost)) {
+          // Peer already exists from join-room with host/cohost status, preserve it
+          shouldBeHost = previousPeer.isHost || false;
+          shouldBeCoHost = previousPeer.isCoHost || false;
+          console.log(`♻️ Preserving existing peer status from join-room:`, {
+            userId,
+            isHost: shouldBeHost,
+            isCoHost: shouldBeCoHost,
+          });
+        } else {
+          // Need to determine host status from database
+          if (userId) {
+            try {
+              const dbRoom = await prisma.room.findUnique({
+                where: { id: roomId },
+              });
+
+              const dbParticipant = await prisma.roomParticipant.findUnique({
+                where: {
+                  roomId_userId: {
+                    roomId,
+                    userId,
+                  },
+                },
+              });
+
+              // User is host if they're the creator or already marked as HOST in DB
+              shouldBeHost =
+                (dbRoom && dbRoom.creatorId === userId) ||
+                dbParticipant?.role === "HOST";
+
+              // User is co-host if marked in DB
+              shouldBeCoHost = dbParticipant?.role === "COHOST";
+
+              console.log(`🔍 Host check for ${userName}:`, {
+                userId,
+                creatorId: dbRoom?.creatorId,
+                dbRole: dbParticipant?.role,
+                isCreator: dbRoom?.creatorId === userId,
+                shouldBeHost,
+                shouldBeCoHost,
+              });
+            } catch (err) {
+              console.error("❌ Error checking host status:", err);
+              // Fallback to original logic
+              const isFirstPerson = room.peers.size === 0;
+              shouldBeHost = isCreator === true || isFirstPerson;
+            }
+          } else {
+            // No userId - use fallback logic
+            const isFirstPerson = room.peers.size === 0;
+            shouldBeHost = isCreator === true || isFirstPerson;
+          }
+        }
 
         console.log(
-          `🎯 isCreator: ${isCreator}, isFirstPerson: ${isFirstPerson}, shouldBeHost: ${shouldBeHost}`
+          `🎯 Final status - shouldBeHost: ${shouldBeHost}, shouldBeCoHost: ${shouldBeCoHost}`
         );
 
         // ✅ CRITICAL: Create peer with user info from client
@@ -905,6 +998,7 @@ io.on("connection", (socket) => {
           name: userName || "User " + socket.id.slice(0, 4),
           imageUrl: userImageUrl || null,
           isHost: shouldBeHost,
+          isCoHost: shouldBeCoHost,
           transports: new Map(),
           producers: new Map(),
           consumers: new Map(),
@@ -957,6 +1051,7 @@ io.on("connection", (socket) => {
                   isAudioMuted: p.isAudioMuted,
                   isVideoPaused: p.isVideoPaused,
                   isHost: p.role === "HOST",
+                  isCoHost: p.role === "COHOST",
                 });
               }
             });
@@ -968,12 +1063,13 @@ io.on("connection", (socket) => {
           } else {
             // Fallback to in-memory peers if DB is empty
             participants = Array.from(room.peers.values()).map((p) => ({
-              id: p.socketId,
+              id: p.userId || p.socketId, // Use userId if available, fallback to socketId
               name: p.name,
               imageUrl: p.imageUrl,
               isAudioMuted: false,
               isVideoPaused: false,
               isHost: p.isHost || false,
+              isCoHost: p.isCoHost || false,
             }));
             console.log(
               `📋 Using memory participant list (${participants.length} participants)`
@@ -983,12 +1079,13 @@ io.on("connection", (socket) => {
           console.error("❌ Error fetching participants from DB:", dbError);
           // Fallback to in-memory peers
           participants = Array.from(room.peers.values()).map((p) => ({
-            id: p.socketId,
+            id: p.userId || p.socketId, // Use userId if available, fallback to socketId
             name: p.name,
             imageUrl: p.imageUrl,
             isAudioMuted: false,
             isVideoPaused: false,
             isHost: p.isHost || false,
+            isCoHost: p.isCoHost || false,
           }));
         }
 
@@ -1005,7 +1102,27 @@ io.on("connection", (socket) => {
         });
 
         console.log(`🎧 Mediasoup ready for ${socket.id} in ${roomId}`);
-        cb({ success: true, existingProducers });
+
+        // ✅ Send current screen share permission state to joining participant
+        socket.emit("screenshare-global-update", {
+          enabled: room.screenShareEnabled,
+          by: "System",
+        });
+
+        // ✅ Send current user's status in callback
+        const currentPeer = room.peers.get(socket.id);
+        console.log(`📤 Sending join response with status:`, {
+          userId: currentPeer?.userId,
+          isHost: currentPeer?.isHost,
+          isCoHost: currentPeer?.isCoHost,
+        });
+
+        cb({
+          success: true,
+          existingProducers,
+          isHost: currentPeer?.isHost || false,
+          isCoHost: currentPeer?.isCoHost || false,
+        });
       } catch (err: any) {
         console.error("Error joining mediasoup room:", err);
         cb({ error: err.message });
@@ -1119,6 +1236,18 @@ io.on("connection", (socket) => {
         if (!peer) {
           console.error(`❌ Peer ${socket.id} not found`);
           return cb({ error: "Peer not found" });
+        }
+
+        // ✅ Check if screen sharing is globally disabled
+        const requestingScreenShare = appData?.share || false;
+        if (requestingScreenShare && !room.screenShareEnabled) {
+          console.warn(
+            `⛔ Screen share denied for ${socket.id} - disabled by host`
+          );
+          socket.emit("screenshare-denied", {
+            reason: "Screen sharing is currently disabled by the host",
+          });
+          return cb({ error: "Screen sharing is disabled" });
         }
 
         // ✅ Store screen share metadata in producer's appData
@@ -1457,6 +1586,442 @@ io.on("connection", (socket) => {
   });
 
   /* =========================
+     HOST CONTROLS
+  ========================= */
+
+  // ✅ Make participant a co-host
+  socket.on("make-cohost", async ({ roomId, participantId }) => {
+    try {
+      console.log("📥 Received make-cohost:", {
+        roomId,
+        participantId,
+        fromSocket: socket.id,
+      });
+
+      const room = await getOrCreateRoom(roomId);
+      const requester = room.peers.get(socket.id);
+
+      console.log("🔍 Requester check:", {
+        socketId: socket.id,
+        requesterExists: !!requester,
+        requesterIsHost: requester?.isHost,
+        requesterName: requester?.name,
+        requesterUserId: requester?.userId,
+      });
+
+      // Verify authorization - only host can promote co-hosts
+      if (!requester?.isHost) {
+        console.warn(
+          `⛔ Non-host ${socket.id} (${requester?.name}) attempted to make co-host`
+        );
+        socket.emit("error", { message: "Only hosts can promote co-hosts" });
+        return;
+      }
+
+      // Find target participant in database
+      const targetParticipant = await prisma.roomParticipant.findUnique({
+        where: {
+          roomId_userId: {
+            roomId,
+            userId: participantId,
+          },
+        },
+      });
+
+      if (!targetParticipant) {
+        socket.emit("error", { message: "Participant not found" });
+        return;
+      }
+
+      // Cannot promote host to co-host
+      if (targetParticipant.role === "HOST") {
+        socket.emit("error", { message: "Cannot promote host to co-host" });
+        return;
+      }
+
+      // Update participant role in database
+      await prisma.roomParticipant.update({
+        where: {
+          roomId_userId: {
+            roomId,
+            userId: participantId,
+          },
+        },
+        data: {
+          role: "COHOST",
+        },
+      });
+
+      // Update in-memory peer if they're connected
+      for (const [peerId, peer] of room.peers) {
+        if (peer.userId === participantId) {
+          peer.isCoHost = true;
+          break;
+        }
+      }
+
+      console.log(
+        `🤝 ${participantId} promoted to co-host by ${
+          requester.name || socket.id
+        }`
+      );
+
+      // Broadcast to all participants in room
+      io.to(roomId).emit("participant-updated", {
+        participantId,
+        updates: {
+          isCoHost: true,
+        },
+      });
+
+      // Find target's socket ID to notify them directly
+      let targetSocketId = null;
+      for (const [peerId, peer] of room.peers) {
+        if (peer.userId === participantId) {
+          targetSocketId = peerId;
+          break;
+        }
+      }
+
+      // Notify the promoted user
+      if (targetSocketId) {
+        io.to(targetSocketId).emit("cohost-granted", {
+          by: requester.name || "Host",
+        });
+      }
+
+      // Confirm to host
+      socket.emit("success", { message: "Co-host status granted" });
+
+      // Refresh participant list for all
+      const participants = await prisma.roomParticipant.findMany({
+        where: { roomId },
+      });
+      io.to(roomId).emit(
+        "participant-list-update",
+        participants.map((p) => ({
+          id: p.userId,
+          name: p.name,
+          imageUrl: p.imageUrl,
+          isAudioMuted: p.isAudioMuted,
+          isVideoPaused: p.isVideoPaused,
+          isHost: p.role === "HOST",
+          isCoHost: p.role === "COHOST",
+        }))
+      );
+    } catch (err: any) {
+      console.error("❌ Error in make-cohost:", err);
+      socket.emit("error", { message: err.message });
+    }
+  });
+
+  // ✅ Remove co-host status from participant
+  socket.on("remove-cohost", async ({ roomId, participantId }) => {
+    try {
+      const room = await getOrCreateRoom(roomId);
+      const requester = room.peers.get(socket.id);
+
+      // Verify authorization - only host can remove co-hosts
+      if (!requester?.isHost) {
+        console.warn(`⛔ Non-host ${socket.id} attempted to remove co-host`);
+        socket.emit("error", { message: "Only hosts can remove co-hosts" });
+        return;
+      }
+
+      // Find target participant in database
+      const targetParticipant = await prisma.roomParticipant.findUnique({
+        where: {
+          roomId_userId: {
+            roomId,
+            userId: participantId,
+          },
+        },
+      });
+
+      if (!targetParticipant) {
+        socket.emit("error", { message: "Participant not found" });
+        return;
+      }
+
+      // Update participant role in database
+      await prisma.roomParticipant.update({
+        where: {
+          roomId_userId: {
+            roomId,
+            userId: participantId,
+          },
+        },
+        data: {
+          role: "PARTICIPANT",
+        },
+      });
+
+      // Update in-memory peer if they're connected
+      for (const [peerId, peer] of room.peers) {
+        if (peer.userId === participantId) {
+          peer.isCoHost = false;
+          break;
+        }
+      }
+
+      console.log(
+        `👥 ${participantId} demoted from co-host by ${
+          requester.name || socket.id
+        }`
+      );
+
+      // Broadcast to all participants in room
+      io.to(roomId).emit("participant-updated", {
+        participantId,
+        updates: {
+          isCoHost: false,
+        },
+      });
+
+      // Find target's socket ID to notify them directly
+      let targetSocketId = null;
+      for (const [peerId, peer] of room.peers) {
+        if (peer.userId === participantId) {
+          targetSocketId = peerId;
+          break;
+        }
+      }
+
+      // Notify the demoted user
+      if (targetSocketId) {
+        io.to(targetSocketId).emit("cohost-revoked", {
+          by: requester.name || "Host",
+        });
+      }
+
+      // Confirm to host
+      socket.emit("success", { message: "Co-host status removed" });
+
+      // Refresh participant list for all
+      const participants = await prisma.roomParticipant.findMany({
+        where: { roomId },
+      });
+      io.to(roomId).emit(
+        "participant-list-update",
+        participants.map((p) => ({
+          id: p.userId,
+          name: p.name,
+          imageUrl: p.imageUrl,
+          isAudioMuted: p.isAudioMuted,
+          isVideoPaused: p.isVideoPaused,
+          isHost: p.role === "HOST",
+          isCoHost: p.role === "COHOST",
+        }))
+      );
+    } catch (err: any) {
+      console.error("❌ Error in remove-cohost:", err);
+      socket.emit("error", { message: err.message });
+    }
+  });
+
+  // ✅ Host disables screen sharing for everyone
+  socket.on("host-disable-screenshare", async ({ roomId }) => {
+    try {
+      const room = await getOrCreateRoom(roomId);
+      const peer = room.peers.get(socket.id);
+
+      // Verify authorization - only hosts or co-hosts can disable
+      if (!peer?.isHost && !peer?.isCoHost) {
+        console.warn(
+          `⛔ Non-host/co-host ${socket.id} attempted to disable screen sharing`
+        );
+        socket.emit("error", {
+          message: "Only hosts and co-hosts can control screen sharing",
+        });
+        return;
+      }
+
+      if (!room) {
+        socket.emit("error", { message: "Room not found" });
+        return;
+      }
+
+      // Update room state
+      room.screenShareEnabled = false;
+
+      console.log(
+        `🚫 Host ${peer.name || socket.id} disabled screen sharing in ${roomId}`
+      );
+
+      // Close all active screen share producers
+      let closedCount = 0;
+      for (const [peerId, p] of room.peers) {
+        for (const [producerId, producer] of p.producers) {
+          const isScreenShare =
+            producer.appData?.share || producer.appData?.isScreenShare || false;
+
+          if (isScreenShare) {
+            console.log(
+              `🚫 Force closing screen share producer ${producerId} from ${peerId}`
+            );
+
+            // Close the producer - mediasoup will handle consumer cleanup
+            producer.close();
+            p.producers.delete(producerId);
+            closedCount++;
+
+            // Broadcast producer closed
+            io.to(roomId).emit("producer-closed", {
+              producerId,
+              peerId,
+              userId: p.userId || peerId,
+              isScreenShare: true,
+              kind: producer.kind,
+            });
+          }
+        }
+      }
+
+      if (closedCount > 0) {
+        console.log(
+          `✅ Closed ${closedCount} screen share producer(s) in ${roomId}`
+        );
+      }
+
+      // Broadcast permission change to ALL participants
+      io.to(roomId).emit("screenshare-global-update", {
+        enabled: false,
+        by: peer.name || "Host",
+      });
+
+      // Confirm to host
+      socket.emit("success", { message: "Screen sharing disabled" });
+    } catch (err: any) {
+      console.error("❌ Error in host-disable-screenshare:", err);
+      socket.emit("error", { message: err.message });
+    }
+  });
+
+  // ✅ Host enables screen sharing for everyone
+  socket.on("host-enable-screenshare", async ({ roomId }) => {
+    try {
+      const room = await getOrCreateRoom(roomId);
+      const peer = room.peers.get(socket.id);
+
+      // Verify authorization - only hosts or co-hosts can enable
+      if (!peer?.isHost && !peer?.isCoHost) {
+        console.warn(
+          `⛔ Non-host/co-host ${socket.id} attempted to enable screen sharing`
+        );
+        socket.emit("error", {
+          message: "Only hosts and co-hosts can control screen sharing",
+        });
+        return;
+      }
+
+      if (!room) {
+        socket.emit("error", { message: "Room not found" });
+        return;
+      }
+
+      // Update room state
+      room.screenShareEnabled = true;
+
+      console.log(
+        `✅ Host ${peer.name || socket.id} enabled screen sharing in ${roomId}`
+      );
+
+      // Broadcast permission change to ALL participants
+      io.to(roomId).emit("screenshare-global-update", {
+        enabled: true,
+        by: peer.name || "Host",
+      });
+
+      // Confirm to host
+      socket.emit("success", { message: "Screen sharing enabled" });
+    } catch (err: any) {
+      console.error("❌ Error in host-enable-screenshare:", err);
+      socket.emit("error", { message: err.message });
+    }
+  });
+
+  // ✅ Legacy bulk action handler (kept for backwards compatibility)
+  socket.on("host-bulk-action", async ({ roomId, type, grant }, cb) => {
+    try {
+      const room = await getOrCreateRoom(roomId);
+      const peer = room.peers.get(socket.id);
+
+      // Verify the user is a host
+      if (!peer?.isHost) {
+        console.warn(`⛔ Non-host ${socket.id} attempted host-bulk-action`);
+        return cb?.({ error: "Only hosts can perform bulk actions" });
+      }
+
+      // Handle screen share permission toggle
+      if (type === "screenshare") {
+        const wasEnabled = room.screenShareEnabled;
+        room.screenShareEnabled = grant;
+
+        console.log(
+          `🖥️ Host ${socket.id} ${
+            grant ? "enabled" : "disabled"
+          } screen sharing in ${roomId}`
+        );
+
+        // If disabling screen sharing, force close all active screen-share producers
+        if (!grant && wasEnabled) {
+          let closedCount = 0;
+
+          for (const [peerId, p] of room.peers) {
+            for (const [producerId, producer] of p.producers) {
+              const isScreenShare =
+                producer.appData?.share ||
+                producer.appData?.isScreenShare ||
+                false;
+
+              if (isScreenShare) {
+                console.log(
+                  `🚫 Force closing screen share producer ${producerId} from ${peerId}`
+                );
+
+                // Close the producer - mediasoup will handle consumer cleanup
+                producer.close();
+                p.producers.delete(producerId);
+                closedCount++;
+
+                // Notify all participants that this producer was closed
+                io.to(roomId).emit("producer-closed", {
+                  producerId,
+                  peerId,
+                  userId: p.userId || peerId,
+                  isScreenShare: true,
+                  kind: producer.kind,
+                  reason: "disabled-by-host",
+                });
+              }
+            }
+          }
+
+          if (closedCount > 0) {
+            console.log(
+              `✅ Closed ${closedCount} screen share producer(s) in ${roomId}`
+            );
+          }
+        }
+
+        // Broadcast state change to all participants
+        io.to(roomId).emit("screenshare-global-update", {
+          enabled: grant,
+          by: peer.name || "Host",
+        });
+
+        cb?.({ success: true, enabled: grant });
+      } else {
+        // Handle other bulk action types if needed
+        cb?.({ error: `Unknown bulk action type: ${type}` });
+      }
+    } catch (err: any) {
+      console.error("❌ Error in host-bulk-action:", err);
+      cb?.({ error: err.message });
+    }
+  });
+
+  /* =========================
      RECORDING
   ========================= */
 
@@ -1495,9 +2060,20 @@ io.on("connection", (socket) => {
   socket.on("make-host", async ({ roomId, participantId }) => {
     try {
       const room = await getOrCreateRoom(roomId);
-      const peer = room.peers.get(participantId);
+      const requester = room.peers.get(socket.id);
 
-      if (!peer) return;
+      // Only full hosts can make other hosts (not co-hosts)
+      if (!requester?.isHost) {
+        console.warn(`⛔ Non-host ${socket.id} attempted to make host`);
+        socket.emit("error", { message: "Only hosts can promote other hosts" });
+        return;
+      }
+
+      const peer = room.peers.get(participantId);
+      if (!peer) {
+        socket.emit("error", { message: "Participant not found" });
+        return;
+      }
 
       peer.isHost = true;
       console.log(`👑 Made ${peer.name} a host`);
@@ -1510,6 +2086,7 @@ io.on("connection", (socket) => {
         isAudioMuted: false,
         isVideoPaused: false,
         isHost: p.isHost || false,
+        isCoHost: p.isCoHost || false,
       }));
       io.to(roomId).emit("participant-list-update", participants);
     } catch (err) {
@@ -1520,9 +2097,20 @@ io.on("connection", (socket) => {
   socket.on("remove-host", async ({ roomId, participantId }) => {
     try {
       const room = await getOrCreateRoom(roomId);
-      const peer = room.peers.get(participantId);
+      const requester = room.peers.get(socket.id);
 
-      if (!peer) return;
+      // Only full hosts can remove host status (not co-hosts)
+      if (!requester?.isHost) {
+        console.warn(`⛔ Non-host ${socket.id} attempted to remove host`);
+        socket.emit("error", { message: "Only hosts can remove host status" });
+        return;
+      }
+
+      const peer = room.peers.get(participantId);
+      if (!peer) {
+        socket.emit("error", { message: "Participant not found" });
+        return;
+      }
 
       peer.isHost = false;
       console.log(`👤 Removed host status from ${peer.name}`);
@@ -1535,6 +2123,7 @@ io.on("connection", (socket) => {
         isAudioMuted: false,
         isVideoPaused: false,
         isHost: p.isHost || false,
+        isCoHost: p.isCoHost || false,
       }));
       io.to(roomId).emit("participant-list-update", participants);
     } catch (err) {
