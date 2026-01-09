@@ -7,6 +7,7 @@ export type Peer = {
   name?: string;
   imageUrl?: string | null;
   isHost?: boolean;
+  isCoHost?: boolean; // Co-host status
   transports: Map<string, WebRtcTransport>; // Specific type instead of any
   producers: Map<string, any>;
   consumers: Map<string, any>;
@@ -16,6 +17,7 @@ export type Peer = {
 export type Room = {
   router: Router;
   peers: Map<string, Peer>;
+  screenShareEnabled: boolean; // Global screen share permission
 };
 
 const rooms = new Map<string, Room>();
@@ -89,6 +91,7 @@ export const getOrCreateRoom = async (
   const room = {
     router,
     peers: new Map(),
+    screenShareEnabled: true, // Default: screen sharing allowed
   };
 
   rooms.set(roomId, room);
