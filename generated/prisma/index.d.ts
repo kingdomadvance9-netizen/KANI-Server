@@ -4167,6 +4167,8 @@ export namespace Prisma {
     role: string | null
     isAudioMuted: boolean | null
     isVideoPaused: boolean | null
+    audioLocked: boolean | null
+    screenShareLocked: boolean | null
   }
 
   export type RoomParticipantMaxAggregateOutputType = {
@@ -4178,6 +4180,8 @@ export namespace Prisma {
     role: string | null
     isAudioMuted: boolean | null
     isVideoPaused: boolean | null
+    audioLocked: boolean | null
+    screenShareLocked: boolean | null
   }
 
   export type RoomParticipantCountAggregateOutputType = {
@@ -4189,6 +4193,8 @@ export namespace Prisma {
     role: number
     isAudioMuted: number
     isVideoPaused: number
+    audioLocked: number
+    screenShareLocked: number
     _all: number
   }
 
@@ -4202,6 +4208,8 @@ export namespace Prisma {
     role?: true
     isAudioMuted?: true
     isVideoPaused?: true
+    audioLocked?: true
+    screenShareLocked?: true
   }
 
   export type RoomParticipantMaxAggregateInputType = {
@@ -4213,6 +4221,8 @@ export namespace Prisma {
     role?: true
     isAudioMuted?: true
     isVideoPaused?: true
+    audioLocked?: true
+    screenShareLocked?: true
   }
 
   export type RoomParticipantCountAggregateInputType = {
@@ -4224,6 +4234,8 @@ export namespace Prisma {
     role?: true
     isAudioMuted?: true
     isVideoPaused?: true
+    audioLocked?: true
+    screenShareLocked?: true
     _all?: true
   }
 
@@ -4308,6 +4320,8 @@ export namespace Prisma {
     role: string
     isAudioMuted: boolean
     isVideoPaused: boolean
+    audioLocked: boolean
+    screenShareLocked: boolean
     _count: RoomParticipantCountAggregateOutputType | null
     _min: RoomParticipantMinAggregateOutputType | null
     _max: RoomParticipantMaxAggregateOutputType | null
@@ -4336,6 +4350,8 @@ export namespace Prisma {
     role?: boolean
     isAudioMuted?: boolean
     isVideoPaused?: boolean
+    audioLocked?: boolean
+    screenShareLocked?: boolean
     room?: boolean | RoomDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["roomParticipant"]>
 
@@ -4348,6 +4364,8 @@ export namespace Prisma {
     role?: boolean
     isAudioMuted?: boolean
     isVideoPaused?: boolean
+    audioLocked?: boolean
+    screenShareLocked?: boolean
     room?: boolean | RoomDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["roomParticipant"]>
 
@@ -4360,6 +4378,8 @@ export namespace Prisma {
     role?: boolean
     isAudioMuted?: boolean
     isVideoPaused?: boolean
+    audioLocked?: boolean
+    screenShareLocked?: boolean
   }
 
   export type RoomParticipantInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -4383,6 +4403,8 @@ export namespace Prisma {
       role: string
       isAudioMuted: boolean
       isVideoPaused: boolean
+      audioLocked: boolean
+      screenShareLocked: boolean
     }, ExtArgs["result"]["roomParticipant"]>
     composites: {}
   }
@@ -4785,6 +4807,8 @@ export namespace Prisma {
     readonly role: FieldRef<"RoomParticipant", 'String'>
     readonly isAudioMuted: FieldRef<"RoomParticipant", 'Boolean'>
     readonly isVideoPaused: FieldRef<"RoomParticipant", 'Boolean'>
+    readonly audioLocked: FieldRef<"RoomParticipant", 'Boolean'>
+    readonly screenShareLocked: FieldRef<"RoomParticipant", 'Boolean'>
   }
     
 
@@ -6209,7 +6233,9 @@ export namespace Prisma {
     imageUrl: 'imageUrl',
     role: 'role',
     isAudioMuted: 'isAudioMuted',
-    isVideoPaused: 'isVideoPaused'
+    isVideoPaused: 'isVideoPaused',
+    audioLocked: 'audioLocked',
+    screenShareLocked: 'screenShareLocked'
   };
 
   export type RoomParticipantScalarFieldEnum = (typeof RoomParticipantScalarFieldEnum)[keyof typeof RoomParticipantScalarFieldEnum]
@@ -6534,6 +6560,8 @@ export namespace Prisma {
     role?: StringFilter<"RoomParticipant"> | string
     isAudioMuted?: BoolFilter<"RoomParticipant"> | boolean
     isVideoPaused?: BoolFilter<"RoomParticipant"> | boolean
+    audioLocked?: BoolFilter<"RoomParticipant"> | boolean
+    screenShareLocked?: BoolFilter<"RoomParticipant"> | boolean
     room?: XOR<RoomRelationFilter, RoomWhereInput>
   }
 
@@ -6546,6 +6574,8 @@ export namespace Prisma {
     role?: SortOrder
     isAudioMuted?: SortOrder
     isVideoPaused?: SortOrder
+    audioLocked?: SortOrder
+    screenShareLocked?: SortOrder
     room?: RoomOrderByWithRelationInput
   }
 
@@ -6562,6 +6592,8 @@ export namespace Prisma {
     role?: StringFilter<"RoomParticipant"> | string
     isAudioMuted?: BoolFilter<"RoomParticipant"> | boolean
     isVideoPaused?: BoolFilter<"RoomParticipant"> | boolean
+    audioLocked?: BoolFilter<"RoomParticipant"> | boolean
+    screenShareLocked?: BoolFilter<"RoomParticipant"> | boolean
     room?: XOR<RoomRelationFilter, RoomWhereInput>
   }, "id" | "roomId_userId">
 
@@ -6574,6 +6606,8 @@ export namespace Prisma {
     role?: SortOrder
     isAudioMuted?: SortOrder
     isVideoPaused?: SortOrder
+    audioLocked?: SortOrder
+    screenShareLocked?: SortOrder
     _count?: RoomParticipantCountOrderByAggregateInput
     _max?: RoomParticipantMaxOrderByAggregateInput
     _min?: RoomParticipantMinOrderByAggregateInput
@@ -6591,6 +6625,8 @@ export namespace Prisma {
     role?: StringWithAggregatesFilter<"RoomParticipant"> | string
     isAudioMuted?: BoolWithAggregatesFilter<"RoomParticipant"> | boolean
     isVideoPaused?: BoolWithAggregatesFilter<"RoomParticipant"> | boolean
+    audioLocked?: BoolWithAggregatesFilter<"RoomParticipant"> | boolean
+    screenShareLocked?: BoolWithAggregatesFilter<"RoomParticipant"> | boolean
   }
 
   export type MpesaTransactionWhereInput = {
@@ -6890,6 +6926,8 @@ export namespace Prisma {
     role?: string
     isAudioMuted?: boolean
     isVideoPaused?: boolean
+    audioLocked?: boolean
+    screenShareLocked?: boolean
     room: RoomCreateNestedOneWithoutParticipantsInput
   }
 
@@ -6902,6 +6940,8 @@ export namespace Prisma {
     role?: string
     isAudioMuted?: boolean
     isVideoPaused?: boolean
+    audioLocked?: boolean
+    screenShareLocked?: boolean
   }
 
   export type RoomParticipantUpdateInput = {
@@ -6912,6 +6952,8 @@ export namespace Prisma {
     role?: StringFieldUpdateOperationsInput | string
     isAudioMuted?: BoolFieldUpdateOperationsInput | boolean
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
+    audioLocked?: BoolFieldUpdateOperationsInput | boolean
+    screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
     room?: RoomUpdateOneRequiredWithoutParticipantsNestedInput
   }
 
@@ -6924,6 +6966,8 @@ export namespace Prisma {
     role?: StringFieldUpdateOperationsInput | string
     isAudioMuted?: BoolFieldUpdateOperationsInput | boolean
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
+    audioLocked?: BoolFieldUpdateOperationsInput | boolean
+    screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type RoomParticipantCreateManyInput = {
@@ -6935,6 +6979,8 @@ export namespace Prisma {
     role?: string
     isAudioMuted?: boolean
     isVideoPaused?: boolean
+    audioLocked?: boolean
+    screenShareLocked?: boolean
   }
 
   export type RoomParticipantUpdateManyMutationInput = {
@@ -6945,6 +6991,8 @@ export namespace Prisma {
     role?: StringFieldUpdateOperationsInput | string
     isAudioMuted?: BoolFieldUpdateOperationsInput | boolean
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
+    audioLocked?: BoolFieldUpdateOperationsInput | boolean
+    screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type RoomParticipantUncheckedUpdateManyInput = {
@@ -6956,6 +7004,8 @@ export namespace Prisma {
     role?: StringFieldUpdateOperationsInput | string
     isAudioMuted?: BoolFieldUpdateOperationsInput | boolean
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
+    audioLocked?: BoolFieldUpdateOperationsInput | boolean
+    screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type MpesaTransactionCreateInput = {
@@ -7332,6 +7382,8 @@ export namespace Prisma {
     role?: SortOrder
     isAudioMuted?: SortOrder
     isVideoPaused?: SortOrder
+    audioLocked?: SortOrder
+    screenShareLocked?: SortOrder
   }
 
   export type RoomParticipantMaxOrderByAggregateInput = {
@@ -7343,6 +7395,8 @@ export namespace Prisma {
     role?: SortOrder
     isAudioMuted?: SortOrder
     isVideoPaused?: SortOrder
+    audioLocked?: SortOrder
+    screenShareLocked?: SortOrder
   }
 
   export type RoomParticipantMinOrderByAggregateInput = {
@@ -7354,6 +7408,8 @@ export namespace Prisma {
     role?: SortOrder
     isAudioMuted?: SortOrder
     isVideoPaused?: SortOrder
+    audioLocked?: SortOrder
+    screenShareLocked?: SortOrder
   }
 
   export type DecimalFilter<$PrismaModel = never> = {
@@ -8165,6 +8221,8 @@ export namespace Prisma {
     role?: string
     isAudioMuted?: boolean
     isVideoPaused?: boolean
+    audioLocked?: boolean
+    screenShareLocked?: boolean
   }
 
   export type RoomParticipantUncheckedCreateWithoutRoomInput = {
@@ -8175,6 +8233,8 @@ export namespace Prisma {
     role?: string
     isAudioMuted?: boolean
     isVideoPaused?: boolean
+    audioLocked?: boolean
+    screenShareLocked?: boolean
   }
 
   export type RoomParticipantCreateOrConnectWithoutRoomInput = {
@@ -8215,6 +8275,8 @@ export namespace Prisma {
     role?: StringFilter<"RoomParticipant"> | string
     isAudioMuted?: BoolFilter<"RoomParticipant"> | boolean
     isVideoPaused?: BoolFilter<"RoomParticipant"> | boolean
+    audioLocked?: BoolFilter<"RoomParticipant"> | boolean
+    screenShareLocked?: BoolFilter<"RoomParticipant"> | boolean
   }
 
   export type RoomCreateWithoutParticipantsInput = {
@@ -8337,6 +8399,8 @@ export namespace Prisma {
     role?: string
     isAudioMuted?: boolean
     isVideoPaused?: boolean
+    audioLocked?: boolean
+    screenShareLocked?: boolean
   }
 
   export type RoomParticipantUpdateWithoutRoomInput = {
@@ -8347,6 +8411,8 @@ export namespace Prisma {
     role?: StringFieldUpdateOperationsInput | string
     isAudioMuted?: BoolFieldUpdateOperationsInput | boolean
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
+    audioLocked?: BoolFieldUpdateOperationsInput | boolean
+    screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type RoomParticipantUncheckedUpdateWithoutRoomInput = {
@@ -8357,6 +8423,8 @@ export namespace Prisma {
     role?: StringFieldUpdateOperationsInput | string
     isAudioMuted?: BoolFieldUpdateOperationsInput | boolean
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
+    audioLocked?: BoolFieldUpdateOperationsInput | boolean
+    screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type RoomParticipantUncheckedUpdateManyWithoutRoomInput = {
@@ -8367,6 +8435,8 @@ export namespace Prisma {
     role?: StringFieldUpdateOperationsInput | string
     isAudioMuted?: BoolFieldUpdateOperationsInput | boolean
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
+    audioLocked?: BoolFieldUpdateOperationsInput | boolean
+    screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
   }
 
 

@@ -155,7 +155,9 @@ exports.Prisma.RoomParticipantScalarFieldEnum = {
   imageUrl: 'imageUrl',
   role: 'role',
   isAudioMuted: 'isAudioMuted',
-  isVideoPaused: 'isVideoPaused'
+  isVideoPaused: 'isVideoPaused',
+  audioLocked: 'audioLocked',
+  screenShareLocked: 'screenShareLocked'
 };
 
 exports.Prisma.MpesaTransactionScalarFieldEnum = {

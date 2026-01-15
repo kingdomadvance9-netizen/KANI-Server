@@ -55,16 +55,18 @@ model Room {
 }
 
 model RoomParticipant {
-  id             String   @id @default(uuid())
-  roomId         String
-  userId         String   // Clerk User ID
-  name           String
-  imageUrl       String?
-  role           String   @default("PARTICIPANT") // "HOST" or "PARTICIPANT"
-  isAudioMuted   Boolean  @default(false)
-  isVideoPaused  Boolean  @default(false)
-  
-  room           Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  id                 String   @id @default(uuid())
+  roomId             String
+  userId             String   // Clerk User ID
+  name               String
+  imageUrl           String?
+  role               String   @default("PARTICIPANT") // "HOST" or "PARTICIPANT" or "COHOST"
+  isAudioMuted       Boolean  @default(false)
+  isVideoPaused      Boolean  @default(false)
+  audioLocked        Boolean  @default(false)        // Cannot unmute when true
+  screenShareLocked  Boolean  @default(false)        // Cannot screen share when true
+
+  room               Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   @@unique([roomId, userId])
 }
