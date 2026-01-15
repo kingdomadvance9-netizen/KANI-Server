@@ -2080,7 +2080,7 @@ io.on("connection", (socket) => {
 
       // Update participant list
       const participants = Array.from(room.peers.values()).map((p) => ({
-        id: p.socketId,
+        id: p.userId || p.socketId,
         name: p.name,
         imageUrl: p.imageUrl,
         isAudioMuted: false,
@@ -2117,7 +2117,7 @@ io.on("connection", (socket) => {
 
       // Update participant list
       const participants = Array.from(room.peers.values()).map((p) => ({
-        id: p.socketId,
+        id: p.userId || p.socketId,
         name: p.name,
         imageUrl: p.imageUrl,
         isAudioMuted: false,
@@ -2154,13 +2154,30 @@ io.on("connection", (socket) => {
         // Remove peer from mediasoup
         removePeerFromRoom(roomId, socket.id);
 
+        // 🔥 DELETE FROM DATABASE - This is critical!
+        if (userId) {
+          try {
+            await prisma.roomParticipant.delete({
+              where: {
+                roomId_userId: {
+                  roomId,
+                  userId,
+                },
+              },
+            });
+            console.log(`🗑️ Deleted ${userId} from database for room ${roomId}`);
+          } catch (dbErr) {
+            console.error("Error deleting participant from DB:", dbErr);
+          }
+        }
+
         // Get room if it still exists (might be deleted if last peer)
         const room = await getOrCreateRoom(roomId).catch(() => null);
         if (!room) continue;
 
         // Update participant list with remaining users
         const participants = Array.from(room.peers.values()).map((p) => ({
-          id: p.socketId,
+          id: p.userId || p.socketId,
           name: p.name,
           imageUrl: p.imageUrl,
           isAudioMuted: false,
