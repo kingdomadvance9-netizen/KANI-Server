@@ -425,18 +425,31 @@ io.on("connection", (socket) => {
           targetSocket.emit("force-mute", {
             audio: true,
             by: requester.name,
-            locked: true, // 🔒 Include lock state to match individual mute pattern
-          });
-
-          // Broadcast state change
-          io.to(roomId).emit("participant-state-changed", {
-            userId: participant.userId,
-            isAudioMuted: true,
+            locked: true,
           });
         }
       }
 
-      // 8. Audit log success
+      // 8. Send updated participant list to all (more efficient than individual state-changed events)
+      const allParticipants = await prisma.roomParticipant.findMany({
+        where: { roomId },
+      });
+      io.to(roomId).emit(
+        "participant-list-update",
+        allParticipants.map((p) => ({
+          id: p.userId,
+          name: p.name,
+          imageUrl: p.imageUrl,
+          isAudioMuted: p.isAudioMuted,
+          isVideoPaused: p.isVideoPaused,
+          isHost: p.role === "HOST",
+          isCoHost: p.role === "COHOST",
+          audioLocked: p.audioLocked ?? false,
+          screenShareLocked: p.screenShareLocked ?? false,
+        }))
+      );
+
+      // 9. Audit log success
       await auditLog({
         action: "GLOBAL_MUTE",
         actor: userId,
@@ -518,18 +531,31 @@ io.on("connection", (socket) => {
         if (targetSocket) {
           targetSocket.emit("allow-unmute", {
             by: requester.name,
-            locked: false, // 🔓 Include unlock state to match individual unmute pattern
-          });
-
-          // Broadcast state change
-          io.to(roomId).emit("participant-state-changed", {
-            userId: participant.userId,
-            isAudioMuted: false,
+            locked: false,
           });
         }
       }
 
-      // 8. Audit log success
+      // 8. Send updated participant list to all
+      const allParticipants = await prisma.roomParticipant.findMany({
+        where: { roomId },
+      });
+      io.to(roomId).emit(
+        "participant-list-update",
+        allParticipants.map((p) => ({
+          id: p.userId,
+          name: p.name,
+          imageUrl: p.imageUrl,
+          isAudioMuted: p.isAudioMuted,
+          isVideoPaused: p.isVideoPaused,
+          isHost: p.role === "HOST",
+          isCoHost: p.role === "COHOST",
+          audioLocked: p.audioLocked ?? false,
+          screenShareLocked: p.screenShareLocked ?? false,
+        }))
+      );
+
+      // 9. Audit log success
       await auditLog({
         action: "GLOBAL_UNMUTE",
         actor: userId,
@@ -613,16 +639,29 @@ io.on("connection", (socket) => {
             video: true,
             by: requester.name,
           });
-
-          // Broadcast state change
-          io.to(roomId).emit("participant-state-changed", {
-            userId: participant.userId,
-            isVideoPaused: true,
-          });
         }
       }
 
-      // 8. Audit log success
+      // 8. Send updated participant list to all
+      const allParticipants = await prisma.roomParticipant.findMany({
+        where: { roomId },
+      });
+      io.to(roomId).emit(
+        "participant-list-update",
+        allParticipants.map((p) => ({
+          id: p.userId,
+          name: p.name,
+          imageUrl: p.imageUrl,
+          isAudioMuted: p.isAudioMuted,
+          isVideoPaused: p.isVideoPaused,
+          isHost: p.role === "HOST",
+          isCoHost: p.role === "COHOST",
+          audioLocked: p.audioLocked ?? false,
+          screenShareLocked: p.screenShareLocked ?? false,
+        }))
+      );
+
+      // 9. Audit log success
       await auditLog({
         action: "GLOBAL_CAMERA_DISABLE",
         actor: userId,
@@ -705,16 +744,29 @@ io.on("connection", (socket) => {
           targetSocket.emit("allow-unpause", {
             by: requester.name,
           });
-
-          // Broadcast state change
-          io.to(roomId).emit("participant-state-changed", {
-            userId: participant.userId,
-            isVideoPaused: false,
-          });
         }
       }
 
-      // 8. Audit log success
+      // 8. Send updated participant list to all
+      const allParticipants = await prisma.roomParticipant.findMany({
+        where: { roomId },
+      });
+      io.to(roomId).emit(
+        "participant-list-update",
+        allParticipants.map((p) => ({
+          id: p.userId,
+          name: p.name,
+          imageUrl: p.imageUrl,
+          isAudioMuted: p.isAudioMuted,
+          isVideoPaused: p.isVideoPaused,
+          isHost: p.role === "HOST",
+          isCoHost: p.role === "COHOST",
+          audioLocked: p.audioLocked ?? false,
+          screenShareLocked: p.screenShareLocked ?? false,
+        }))
+      );
+
+      // 9. Audit log success
       await auditLog({
         action: "GLOBAL_CAMERA_ENABLE",
         actor: userId,
@@ -726,6 +778,218 @@ io.on("connection", (socket) => {
       console.log(`📹 ${requester.name} (${requester.role}) enabled all PARTICIPANTS cameras in room ${roomId}`);
     } catch (err) {
       console.error("Error in enable-all-cameras:", err);
+    }
+  });
+
+  // ✅ Disable screen sharing for all participants
+  socket.on("disable-all-screen-sharing", async ({ roomId, userId }: any) => {
+    try {
+      // 1. Rate limiting
+      if (!checkRateLimit(userId)) {
+        await auditLog({
+          action: "GLOBAL_SCREENSHARE_DISABLE",
+          actor: userId,
+          roomId,
+          result: "DENIED",
+          reason: "RATE_LIMIT_EXCEEDED",
+          timestamp: new Date(),
+        });
+        return;
+      }
+
+      // 2. Permission check
+      const permissionResult = await checkPermission(userId, roomId, "GLOBAL_SCREENSHARE_DISABLE");
+
+      if (!permissionResult.allowed) {
+        if (permissionResult.shouldAuditLog) {
+          await auditLog({
+            action: "GLOBAL_SCREENSHARE_DISABLE",
+            actor: userId,
+            roomId,
+            result: "DENIED",
+            reason: permissionResult.reason || "UNAUTHORIZED",
+            timestamp: new Date(),
+          });
+        }
+        console.log(`❌ ${userId} unauthorized for global screenshare disable: ${permissionResult.reason}`);
+        return;
+      }
+
+      // 3. Get requester info
+      const requester = await prisma.roomParticipant.findUnique({
+        where: { roomId_userId: { roomId, userId } },
+      });
+
+      if (!requester) return;
+
+      // 4. Get only PARTICIPANTS (not hosts or co-hosts)
+      const participants = await getGlobalActionTargets(roomId);
+
+      // 5. Update database - ONLY participants, set screenShareLocked
+      await prisma.roomParticipant.updateMany({
+        where: {
+          roomId,
+          role: "PARTICIPANT",
+        },
+        data: {
+          screenShareLocked: true, // Lock screen share
+        },
+      });
+
+      // 6. Get active sockets
+      const targetSockets = await io.in(roomId).fetchSockets();
+
+      // 7. Emit screenshare-control to each PARTICIPANT only
+      for (const participant of participants) {
+        const targetSocket = targetSockets.find(
+          (s: any) => s.data?.userId === participant.userId
+        );
+
+        if (targetSocket) {
+          targetSocket.emit("screenshare-control", {
+            enabled: false,
+            by: requester.name,
+          });
+        }
+      }
+
+      // 8. Refresh participant list
+      const allParticipants = await prisma.roomParticipant.findMany({
+        where: { roomId },
+      });
+      io.to(roomId).emit(
+        "participant-list-update",
+        allParticipants.map((p) => ({
+          id: p.userId,
+          name: p.name,
+          imageUrl: p.imageUrl,
+          isAudioMuted: p.isAudioMuted,
+          isVideoPaused: p.isVideoPaused,
+          isHost: p.role === "HOST",
+          isCoHost: p.role === "COHOST",
+          audioLocked: p.audioLocked ?? false,
+          screenShareLocked: p.screenShareLocked ?? false,
+        }))
+      );
+
+      // 9. Audit log success
+      await auditLog({
+        action: "GLOBAL_SCREENSHARE_DISABLE",
+        actor: userId,
+        roomId,
+        result: "ALLOWED",
+        timestamp: new Date(),
+      });
+
+      console.log(`🖥️ ${requester.name} (${requester.role}) disabled all PARTICIPANTS screen sharing in room ${roomId}`);
+    } catch (err) {
+      console.error("Error in disable-all-screen-sharing:", err);
+    }
+  });
+
+  // ✅ Enable screen sharing for all participants
+  socket.on("enable-all-screen-sharing", async ({ roomId, userId }: any) => {
+    try {
+      // 1. Rate limiting
+      if (!checkRateLimit(userId)) {
+        await auditLog({
+          action: "GLOBAL_SCREENSHARE_ENABLE",
+          actor: userId,
+          roomId,
+          result: "DENIED",
+          reason: "RATE_LIMIT_EXCEEDED",
+          timestamp: new Date(),
+        });
+        return;
+      }
+
+      // 2. Permission check
+      const permissionResult = await checkPermission(userId, roomId, "GLOBAL_SCREENSHARE_ENABLE");
+
+      if (!permissionResult.allowed) {
+        if (permissionResult.shouldAuditLog) {
+          await auditLog({
+            action: "GLOBAL_SCREENSHARE_ENABLE",
+            actor: userId,
+            roomId,
+            result: "DENIED",
+            reason: permissionResult.reason || "UNAUTHORIZED",
+            timestamp: new Date(),
+          });
+        }
+        console.log(`❌ ${userId} unauthorized for global screenshare enable: ${permissionResult.reason}`);
+        return;
+      }
+
+      // 3. Get requester info
+      const requester = await prisma.roomParticipant.findUnique({
+        where: { roomId_userId: { roomId, userId } },
+      });
+
+      if (!requester) return;
+
+      // 4. Get only PARTICIPANTS (not hosts or co-hosts)
+      const participants = await getGlobalActionTargets(roomId);
+
+      // 5. Update database - ONLY participants, clear screenShareLocked
+      await prisma.roomParticipant.updateMany({
+        where: {
+          roomId,
+          role: "PARTICIPANT",
+        },
+        data: {
+          screenShareLocked: false, // Unlock screen share
+        },
+      });
+
+      // 6. Get active sockets
+      const targetSockets = await io.in(roomId).fetchSockets();
+
+      // 7. Emit screenshare-control to each PARTICIPANT only
+      for (const participant of participants) {
+        const targetSocket = targetSockets.find(
+          (s: any) => s.data?.userId === participant.userId
+        );
+
+        if (targetSocket) {
+          targetSocket.emit("screenshare-control", {
+            enabled: true,
+            by: requester.name,
+          });
+        }
+      }
+
+      // 8. Refresh participant list
+      const allParticipants = await prisma.roomParticipant.findMany({
+        where: { roomId },
+      });
+      io.to(roomId).emit(
+        "participant-list-update",
+        allParticipants.map((p) => ({
+          id: p.userId,
+          name: p.name,
+          imageUrl: p.imageUrl,
+          isAudioMuted: p.isAudioMuted,
+          isVideoPaused: p.isVideoPaused,
+          isHost: p.role === "HOST",
+          isCoHost: p.role === "COHOST",
+          audioLocked: p.audioLocked ?? false,
+          screenShareLocked: p.screenShareLocked ?? false,
+        }))
+      );
+
+      // 9. Audit log success
+      await auditLog({
+        action: "GLOBAL_SCREENSHARE_ENABLE",
+        actor: userId,
+        roomId,
+        result: "ALLOWED",
+        timestamp: new Date(),
+      });
+
+      console.log(`🖥️ ${requester.name} (${requester.role}) enabled all PARTICIPANTS screen sharing in room ${roomId}`);
+    } catch (err) {
+      console.error("Error in enable-all-screen-sharing:", err);
     }
   });
 
@@ -806,20 +1070,14 @@ io.on("connection", (socket) => {
             targetSocket.emit("force-mute", {
               audio: true,
               by: requester.name,
-              locked: true, // Include lock state in emit
+              locked: true,
             });
           } else {
             targetSocket.emit("allow-unmute", {
               by: requester.name,
-              locked: false, // Include lock state in emit
+              locked: false,
             });
           }
-
-          // Broadcast state change to everyone
-          io.to(roomId).emit("participant-state-changed", {
-            userId: targetUserId,
-            isAudioMuted: force === "mute",
-          });
 
           console.log(
             `🔇 ${requester.name} (${requester.role}) ${
@@ -828,7 +1086,26 @@ io.on("connection", (socket) => {
           );
         }
 
-        // 6. Audit log success
+        // 6. Send updated participant list to ensure lock state is synced
+        const allParticipants = await prisma.roomParticipant.findMany({
+          where: { roomId },
+        });
+        io.to(roomId).emit(
+          "participant-list-update",
+          allParticipants.map((p) => ({
+            id: p.userId,
+            name: p.name,
+            imageUrl: p.imageUrl,
+            isAudioMuted: p.isAudioMuted,
+            isVideoPaused: p.isVideoPaused,
+            isHost: p.role === "HOST",
+            isCoHost: p.role === "COHOST",
+            audioLocked: p.audioLocked ?? false,
+            screenShareLocked: p.screenShareLocked ?? false,
+          }))
+        );
+
+        // 7. Audit log success
         await auditLog({
           action,
           actor: userId,
