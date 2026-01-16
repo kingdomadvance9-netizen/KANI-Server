@@ -232,16 +232,29 @@ io.on("connection", (socket) => {
           }))
         );
 
-        // Send chat history
+        // Send chat history (last 150 messages to prevent memory issues)
         const history = await prisma.message.findMany({
           where: { roomId },
-          orderBy: { createdAt: "asc" },
-          include: { reactions: true },
+          orderBy: { createdAt: "desc" },
+          take: 150,
+          include: {
+            reactions: true,
+            replyTo: {
+              select: {
+                id: true,
+                text: true,
+                senderName: true,
+              },
+            },
+          },
         });
+
+        // Reverse to get chronological order (oldest first)
+        const chronologicalHistory = history.reverse();
 
         socket.emit(
           "chat-history",
-          history.map((msg: any) => ({
+          chronologicalHistory.map((msg: any) => ({
             socketId: "system",
             message: {
               id: msg.id,
@@ -253,6 +266,13 @@ io.on("connection", (socket) => {
                 avatarUrl: msg.senderAvatar,
               },
               pinned: msg.pinned,
+              replyTo: msg.replyTo
+                ? {
+                    id: msg.replyTo.id,
+                    text: msg.replyTo.text,
+                    senderName: msg.replyTo.senderName,
+                  }
+                : undefined,
               reactions: msg.reactions.reduce((acc: any, r: any) => {
                 acc[r.emoji] ??= [];
                 acc[r.emoji].push(r.userId);
@@ -261,6 +281,10 @@ io.on("connection", (socket) => {
             },
           }))
         );
+
+        console.log(
+          `💬 Sent ${chronologicalHistory.length} chat messages to ${userName}`
+        );
       } catch (err) {
         console.error("Error in join-room:", err);
         socket.emit("chat-history", []);
@@ -268,13 +292,83 @@ io.on("connection", (socket) => {
     }
   );
 
-  socket.on("send-message", async ({ roomId, message }) => {
-    io.to(roomId).emit("receive-message", {
-      socketId: socket.id,
-      message,
-    });
+  /* =========================
+     EXPLICIT CHAT HISTORY REQUEST
+     (For late joins, refreshes, or when initial join-room was missed)
+  ========================= */
 
+  socket.on("request-chat-history", async ({ roomId }: { roomId: string }) => {
     try {
+      console.log(`💬 Explicit chat history request for room ${roomId}`);
+
+      if (!roomId) {
+        console.error("❌ No roomId provided for chat history request");
+        socket.emit("chat-history", []);
+        return;
+      }
+
+      // Fetch last 150 messages
+      const history = await prisma.message.findMany({
+        where: { roomId },
+        orderBy: { createdAt: "desc" },
+        take: 150,
+        include: {
+          reactions: true,
+          replyTo: {
+            select: {
+              id: true,
+              text: true,
+              senderName: true,
+            },
+          },
+        },
+      });
+
+      // Reverse to get chronological order (oldest first)
+      const chronologicalHistory = history.reverse();
+
+      socket.emit(
+        "chat-history",
+        chronologicalHistory.map((msg: any) => ({
+          socketId: "system",
+          message: {
+            id: msg.id,
+            text: msg.text,
+            createdAt: msg.createdAt.getTime(),
+            sender: {
+              id: msg.senderId,
+              name: msg.senderName,
+              avatarUrl: msg.senderAvatar,
+            },
+            pinned: msg.pinned,
+            replyTo: msg.replyTo
+              ? {
+                  id: msg.replyTo.id,
+                  text: msg.replyTo.text,
+                  senderName: msg.replyTo.senderName,
+                }
+              : undefined,
+            reactions: msg.reactions.reduce((acc: any, r: any) => {
+              acc[r.emoji] ??= [];
+              acc[r.emoji].push(r.userId);
+              return acc;
+            }, {}),
+          },
+        }))
+      );
+
+      console.log(
+        `✅ Sent ${chronologicalHistory.length} chat messages via explicit request`
+      );
+    } catch (err) {
+      console.error("Error fetching chat history:", err);
+      socket.emit("chat-history", []);
+    }
+  });
+
+  socket.on("send-message", async ({ roomId, message }) => {
+    try {
+      // Save to database FIRST to ensure persistence
       await prisma.message.create({
         data: {
           id: message.id,
@@ -284,9 +378,148 @@ io.on("connection", (socket) => {
           senderName: message.sender.name,
           senderAvatar: message.sender.avatarUrl,
           createdAt: new Date(message.createdAt),
+          replyToId: message.replyTo?.id,
         },
       });
-    } catch {}
+
+      // Broadcast to room AFTER successful save
+      io.to(roomId).emit("receive-message", {
+        socketId: socket.id,
+        message,
+      });
+
+      console.log(`💬 Message saved and broadcast in room ${roomId}`);
+    } catch (error) {
+      console.error("❌ Failed to save message:", error);
+
+      // Notify sender of failure
+      socket.emit("message-error", {
+        messageId: message.id,
+        error: "Failed to save message. Please try again.",
+      });
+    }
+  });
+
+  /* =========================
+     CHAT TYPING INDICATORS
+  ========================= */
+
+  socket.on("typing-start", ({ roomId, name }) => {
+    socket.to(roomId).emit("typing-start", {
+      socketId: socket.id,
+      name,
+    });
+  });
+
+  socket.on("typing-stop", ({ roomId }) => {
+    socket.to(roomId).emit("typing-stop", {
+      socketId: socket.id,
+    });
+  });
+
+  /* =========================
+     CHAT MESSAGE REACTIONS
+  ========================= */
+
+  socket.on("message-react", async ({ roomId, messageId, emoji, userId }) => {
+    try {
+      // Check if reaction already exists
+      const existing = await prisma.reaction.findUnique({
+        where: {
+          messageId_userId: {
+            messageId,
+            userId,
+          },
+        },
+      });
+
+      if (existing) {
+        // Update to new emoji if different, or remove if same
+        if (existing.emoji === emoji) {
+          await prisma.reaction.delete({
+            where: { id: existing.id },
+          });
+          io.to(roomId).emit("message-react-update", {
+            messageId,
+            userId,
+            emoji,
+            action: "removed",
+          });
+        } else {
+          await prisma.reaction.update({
+            where: { id: existing.id },
+            data: { emoji },
+          });
+          io.to(roomId).emit("message-react-update", {
+            messageId,
+            userId,
+            emoji,
+            action: "updated",
+          });
+        }
+      } else {
+        // Create new reaction
+        await prisma.reaction.create({
+          data: {
+            messageId,
+            userId,
+            emoji,
+          },
+        });
+        io.to(roomId).emit("message-react-update", {
+          messageId,
+          userId,
+          emoji,
+          action: "added",
+        });
+      }
+    } catch (err) {
+      console.error("Error in message-react:", err);
+    }
+  });
+
+  /* =========================
+     PIN MESSAGE
+  ========================= */
+
+  socket.on("pin-message", async ({ roomId, messageId, pinned }) => {
+    try {
+      // Unpin all other messages in this room first
+      await prisma.message.updateMany({
+        where: { roomId },
+        data: { pinned: false },
+      });
+
+      // Pin/unpin the target message
+      await prisma.message.update({
+        where: { id: messageId },
+        data: { pinned },
+      });
+
+      // Broadcast to all participants
+      io.to(roomId).emit("pin-message-update", {
+        messageId,
+        pinned,
+      });
+    } catch (err) {
+      console.error("Error in pin-message:", err);
+    }
+  });
+
+  /* =========================
+     VIDEO CALL REACTIONS (Synchronized Floating Particles)
+  ========================= */
+
+  socket.on("video-reaction", ({ roomId, emoji, sessionId, userId, userName }) => {
+    console.log(`🎉 Video reaction from ${userName}:`, { emoji, sessionId });
+
+    // Broadcast to all OTHER participants in the room
+    socket.to(roomId).emit("receive-video-reaction", {
+      emoji,
+      sessionId,
+      userId,
+      userName,
+    });
   });
 
   /* =========================
