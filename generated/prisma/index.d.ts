@@ -5170,10 +5170,13 @@ export namespace Prisma {
     phoneNumber: string | null
     amount: Decimal | null
     accountReference: string | null
+    transactionDesc: string | null
     merchantRequestId: string | null
     checkoutRequestId: string | null
     mpesaReceiptNumber: string | null
     transactionDate: Date | null
+    initiatedAt: Date | null
+    callbackReceivedAt: Date | null
     resultCode: number | null
     resultDesc: string | null
     status: string | null
@@ -5188,10 +5191,13 @@ export namespace Prisma {
     phoneNumber: string | null
     amount: Decimal | null
     accountReference: string | null
+    transactionDesc: string | null
     merchantRequestId: string | null
     checkoutRequestId: string | null
     mpesaReceiptNumber: string | null
     transactionDate: Date | null
+    initiatedAt: Date | null
+    callbackReceivedAt: Date | null
     resultCode: number | null
     resultDesc: string | null
     status: string | null
@@ -5206,10 +5212,13 @@ export namespace Prisma {
     phoneNumber: number
     amount: number
     accountReference: number
+    transactionDesc: number
     merchantRequestId: number
     checkoutRequestId: number
     mpesaReceiptNumber: number
     transactionDate: number
+    initiatedAt: number
+    callbackReceivedAt: number
     resultCode: number
     resultDesc: number
     status: number
@@ -5236,10 +5245,13 @@ export namespace Prisma {
     phoneNumber?: true
     amount?: true
     accountReference?: true
+    transactionDesc?: true
     merchantRequestId?: true
     checkoutRequestId?: true
     mpesaReceiptNumber?: true
     transactionDate?: true
+    initiatedAt?: true
+    callbackReceivedAt?: true
     resultCode?: true
     resultDesc?: true
     status?: true
@@ -5254,10 +5266,13 @@ export namespace Prisma {
     phoneNumber?: true
     amount?: true
     accountReference?: true
+    transactionDesc?: true
     merchantRequestId?: true
     checkoutRequestId?: true
     mpesaReceiptNumber?: true
     transactionDate?: true
+    initiatedAt?: true
+    callbackReceivedAt?: true
     resultCode?: true
     resultDesc?: true
     status?: true
@@ -5272,10 +5287,13 @@ export namespace Prisma {
     phoneNumber?: true
     amount?: true
     accountReference?: true
+    transactionDesc?: true
     merchantRequestId?: true
     checkoutRequestId?: true
     mpesaReceiptNumber?: true
     transactionDate?: true
+    initiatedAt?: true
+    callbackReceivedAt?: true
     resultCode?: true
     resultDesc?: true
     status?: true
@@ -5377,10 +5395,13 @@ export namespace Prisma {
     phoneNumber: string
     amount: Decimal
     accountReference: string
+    transactionDesc: string | null
     merchantRequestId: string | null
     checkoutRequestId: string | null
     mpesaReceiptNumber: string | null
     transactionDate: Date | null
+    initiatedAt: Date | null
+    callbackReceivedAt: Date | null
     resultCode: number | null
     resultDesc: string | null
     status: string
@@ -5414,10 +5435,13 @@ export namespace Prisma {
     phoneNumber?: boolean
     amount?: boolean
     accountReference?: boolean
+    transactionDesc?: boolean
     merchantRequestId?: boolean
     checkoutRequestId?: boolean
     mpesaReceiptNumber?: boolean
     transactionDate?: boolean
+    initiatedAt?: boolean
+    callbackReceivedAt?: boolean
     resultCode?: boolean
     resultDesc?: boolean
     status?: boolean
@@ -5432,10 +5456,13 @@ export namespace Prisma {
     phoneNumber?: boolean
     amount?: boolean
     accountReference?: boolean
+    transactionDesc?: boolean
     merchantRequestId?: boolean
     checkoutRequestId?: boolean
     mpesaReceiptNumber?: boolean
     transactionDate?: boolean
+    initiatedAt?: boolean
+    callbackReceivedAt?: boolean
     resultCode?: boolean
     resultDesc?: boolean
     status?: boolean
@@ -5450,10 +5477,13 @@ export namespace Prisma {
     phoneNumber?: boolean
     amount?: boolean
     accountReference?: boolean
+    transactionDesc?: boolean
     merchantRequestId?: boolean
     checkoutRequestId?: boolean
     mpesaReceiptNumber?: boolean
     transactionDate?: boolean
+    initiatedAt?: boolean
+    callbackReceivedAt?: boolean
     resultCode?: boolean
     resultDesc?: boolean
     status?: boolean
@@ -5472,10 +5502,13 @@ export namespace Prisma {
       phoneNumber: string
       amount: Prisma.Decimal
       accountReference: string
+      transactionDesc: string | null
       merchantRequestId: string | null
       checkoutRequestId: string | null
       mpesaReceiptNumber: string | null
       transactionDate: Date | null
+      initiatedAt: Date | null
+      callbackReceivedAt: Date | null
       resultCode: number | null
       resultDesc: string | null
       status: string
@@ -5880,10 +5913,13 @@ export namespace Prisma {
     readonly phoneNumber: FieldRef<"MpesaTransaction", 'String'>
     readonly amount: FieldRef<"MpesaTransaction", 'Decimal'>
     readonly accountReference: FieldRef<"MpesaTransaction", 'String'>
+    readonly transactionDesc: FieldRef<"MpesaTransaction", 'String'>
     readonly merchantRequestId: FieldRef<"MpesaTransaction", 'String'>
     readonly checkoutRequestId: FieldRef<"MpesaTransaction", 'String'>
     readonly mpesaReceiptNumber: FieldRef<"MpesaTransaction", 'String'>
     readonly transactionDate: FieldRef<"MpesaTransaction", 'DateTime'>
+    readonly initiatedAt: FieldRef<"MpesaTransaction", 'DateTime'>
+    readonly callbackReceivedAt: FieldRef<"MpesaTransaction", 'DateTime'>
     readonly resultCode: FieldRef<"MpesaTransaction", 'Int'>
     readonly resultDesc: FieldRef<"MpesaTransaction", 'String'>
     readonly status: FieldRef<"MpesaTransaction", 'String'>
@@ -6248,10 +6284,13 @@ export namespace Prisma {
     phoneNumber: 'phoneNumber',
     amount: 'amount',
     accountReference: 'accountReference',
+    transactionDesc: 'transactionDesc',
     merchantRequestId: 'merchantRequestId',
     checkoutRequestId: 'checkoutRequestId',
     mpesaReceiptNumber: 'mpesaReceiptNumber',
     transactionDate: 'transactionDate',
+    initiatedAt: 'initiatedAt',
+    callbackReceivedAt: 'callbackReceivedAt',
     resultCode: 'resultCode',
     resultDesc: 'resultDesc',
     status: 'status',
@@ -6639,10 +6678,13 @@ export namespace Prisma {
     phoneNumber?: StringFilter<"MpesaTransaction"> | string
     amount?: DecimalFilter<"MpesaTransaction"> | Decimal | DecimalJsLike | number | string
     accountReference?: StringFilter<"MpesaTransaction"> | string
+    transactionDesc?: StringNullableFilter<"MpesaTransaction"> | string | null
     merchantRequestId?: StringNullableFilter<"MpesaTransaction"> | string | null
     checkoutRequestId?: StringNullableFilter<"MpesaTransaction"> | string | null
     mpesaReceiptNumber?: StringNullableFilter<"MpesaTransaction"> | string | null
     transactionDate?: DateTimeNullableFilter<"MpesaTransaction"> | Date | string | null
+    initiatedAt?: DateTimeNullableFilter<"MpesaTransaction"> | Date | string | null
+    callbackReceivedAt?: DateTimeNullableFilter<"MpesaTransaction"> | Date | string | null
     resultCode?: IntNullableFilter<"MpesaTransaction"> | number | null
     resultDesc?: StringNullableFilter<"MpesaTransaction"> | string | null
     status?: StringFilter<"MpesaTransaction"> | string
@@ -6657,10 +6699,13 @@ export namespace Prisma {
     phoneNumber?: SortOrder
     amount?: SortOrder
     accountReference?: SortOrder
+    transactionDesc?: SortOrderInput | SortOrder
     merchantRequestId?: SortOrderInput | SortOrder
     checkoutRequestId?: SortOrderInput | SortOrder
     mpesaReceiptNumber?: SortOrderInput | SortOrder
     transactionDate?: SortOrderInput | SortOrder
+    initiatedAt?: SortOrderInput | SortOrder
+    callbackReceivedAt?: SortOrderInput | SortOrder
     resultCode?: SortOrderInput | SortOrder
     resultDesc?: SortOrderInput | SortOrder
     status?: SortOrder
@@ -6680,8 +6725,11 @@ export namespace Prisma {
     phoneNumber?: StringFilter<"MpesaTransaction"> | string
     amount?: DecimalFilter<"MpesaTransaction"> | Decimal | DecimalJsLike | number | string
     accountReference?: StringFilter<"MpesaTransaction"> | string
+    transactionDesc?: StringNullableFilter<"MpesaTransaction"> | string | null
     mpesaReceiptNumber?: StringNullableFilter<"MpesaTransaction"> | string | null
     transactionDate?: DateTimeNullableFilter<"MpesaTransaction"> | Date | string | null
+    initiatedAt?: DateTimeNullableFilter<"MpesaTransaction"> | Date | string | null
+    callbackReceivedAt?: DateTimeNullableFilter<"MpesaTransaction"> | Date | string | null
     resultCode?: IntNullableFilter<"MpesaTransaction"> | number | null
     resultDesc?: StringNullableFilter<"MpesaTransaction"> | string | null
     status?: StringFilter<"MpesaTransaction"> | string
@@ -6696,10 +6744,13 @@ export namespace Prisma {
     phoneNumber?: SortOrder
     amount?: SortOrder
     accountReference?: SortOrder
+    transactionDesc?: SortOrderInput | SortOrder
     merchantRequestId?: SortOrderInput | SortOrder
     checkoutRequestId?: SortOrderInput | SortOrder
     mpesaReceiptNumber?: SortOrderInput | SortOrder
     transactionDate?: SortOrderInput | SortOrder
+    initiatedAt?: SortOrderInput | SortOrder
+    callbackReceivedAt?: SortOrderInput | SortOrder
     resultCode?: SortOrderInput | SortOrder
     resultDesc?: SortOrderInput | SortOrder
     status?: SortOrder
@@ -6722,10 +6773,13 @@ export namespace Prisma {
     phoneNumber?: StringWithAggregatesFilter<"MpesaTransaction"> | string
     amount?: DecimalWithAggregatesFilter<"MpesaTransaction"> | Decimal | DecimalJsLike | number | string
     accountReference?: StringWithAggregatesFilter<"MpesaTransaction"> | string
+    transactionDesc?: StringNullableWithAggregatesFilter<"MpesaTransaction"> | string | null
     merchantRequestId?: StringNullableWithAggregatesFilter<"MpesaTransaction"> | string | null
     checkoutRequestId?: StringNullableWithAggregatesFilter<"MpesaTransaction"> | string | null
     mpesaReceiptNumber?: StringNullableWithAggregatesFilter<"MpesaTransaction"> | string | null
     transactionDate?: DateTimeNullableWithAggregatesFilter<"MpesaTransaction"> | Date | string | null
+    initiatedAt?: DateTimeNullableWithAggregatesFilter<"MpesaTransaction"> | Date | string | null
+    callbackReceivedAt?: DateTimeNullableWithAggregatesFilter<"MpesaTransaction"> | Date | string | null
     resultCode?: IntNullableWithAggregatesFilter<"MpesaTransaction"> | number | null
     resultDesc?: StringNullableWithAggregatesFilter<"MpesaTransaction"> | string | null
     status?: StringWithAggregatesFilter<"MpesaTransaction"> | string
@@ -7015,10 +7069,13 @@ export namespace Prisma {
     phoneNumber: string
     amount: Decimal | DecimalJsLike | number | string
     accountReference: string
+    transactionDesc?: string | null
     merchantRequestId?: string | null
     checkoutRequestId?: string | null
     mpesaReceiptNumber?: string | null
     transactionDate?: Date | string | null
+    initiatedAt?: Date | string | null
+    callbackReceivedAt?: Date | string | null
     resultCode?: number | null
     resultDesc?: string | null
     status?: string
@@ -7033,10 +7090,13 @@ export namespace Prisma {
     phoneNumber: string
     amount: Decimal | DecimalJsLike | number | string
     accountReference: string
+    transactionDesc?: string | null
     merchantRequestId?: string | null
     checkoutRequestId?: string | null
     mpesaReceiptNumber?: string | null
     transactionDate?: Date | string | null
+    initiatedAt?: Date | string | null
+    callbackReceivedAt?: Date | string | null
     resultCode?: number | null
     resultDesc?: string | null
     status?: string
@@ -7051,10 +7111,13 @@ export namespace Prisma {
     phoneNumber?: StringFieldUpdateOperationsInput | string
     amount?: DecimalFieldUpdateOperationsInput | Decimal | DecimalJsLike | number | string
     accountReference?: StringFieldUpdateOperationsInput | string
+    transactionDesc?: NullableStringFieldUpdateOperationsInput | string | null
     merchantRequestId?: NullableStringFieldUpdateOperationsInput | string | null
     checkoutRequestId?: NullableStringFieldUpdateOperationsInput | string | null
     mpesaReceiptNumber?: NullableStringFieldUpdateOperationsInput | string | null
     transactionDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    initiatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    callbackReceivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     resultCode?: NullableIntFieldUpdateOperationsInput | number | null
     resultDesc?: NullableStringFieldUpdateOperationsInput | string | null
     status?: StringFieldUpdateOperationsInput | string
@@ -7069,10 +7132,13 @@ export namespace Prisma {
     phoneNumber?: StringFieldUpdateOperationsInput | string
     amount?: DecimalFieldUpdateOperationsInput | Decimal | DecimalJsLike | number | string
     accountReference?: StringFieldUpdateOperationsInput | string
+    transactionDesc?: NullableStringFieldUpdateOperationsInput | string | null
     merchantRequestId?: NullableStringFieldUpdateOperationsInput | string | null
     checkoutRequestId?: NullableStringFieldUpdateOperationsInput | string | null
     mpesaReceiptNumber?: NullableStringFieldUpdateOperationsInput | string | null
     transactionDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    initiatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    callbackReceivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     resultCode?: NullableIntFieldUpdateOperationsInput | number | null
     resultDesc?: NullableStringFieldUpdateOperationsInput | string | null
     status?: StringFieldUpdateOperationsInput | string
@@ -7087,10 +7153,13 @@ export namespace Prisma {
     phoneNumber: string
     amount: Decimal | DecimalJsLike | number | string
     accountReference: string
+    transactionDesc?: string | null
     merchantRequestId?: string | null
     checkoutRequestId?: string | null
     mpesaReceiptNumber?: string | null
     transactionDate?: Date | string | null
+    initiatedAt?: Date | string | null
+    callbackReceivedAt?: Date | string | null
     resultCode?: number | null
     resultDesc?: string | null
     status?: string
@@ -7105,10 +7174,13 @@ export namespace Prisma {
     phoneNumber?: StringFieldUpdateOperationsInput | string
     amount?: DecimalFieldUpdateOperationsInput | Decimal | DecimalJsLike | number | string
     accountReference?: StringFieldUpdateOperationsInput | string
+    transactionDesc?: NullableStringFieldUpdateOperationsInput | string | null
     merchantRequestId?: NullableStringFieldUpdateOperationsInput | string | null
     checkoutRequestId?: NullableStringFieldUpdateOperationsInput | string | null
     mpesaReceiptNumber?: NullableStringFieldUpdateOperationsInput | string | null
     transactionDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    initiatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    callbackReceivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     resultCode?: NullableIntFieldUpdateOperationsInput | number | null
     resultDesc?: NullableStringFieldUpdateOperationsInput | string | null
     status?: StringFieldUpdateOperationsInput | string
@@ -7123,10 +7195,13 @@ export namespace Prisma {
     phoneNumber?: StringFieldUpdateOperationsInput | string
     amount?: DecimalFieldUpdateOperationsInput | Decimal | DecimalJsLike | number | string
     accountReference?: StringFieldUpdateOperationsInput | string
+    transactionDesc?: NullableStringFieldUpdateOperationsInput | string | null
     merchantRequestId?: NullableStringFieldUpdateOperationsInput | string | null
     checkoutRequestId?: NullableStringFieldUpdateOperationsInput | string | null
     mpesaReceiptNumber?: NullableStringFieldUpdateOperationsInput | string | null
     transactionDate?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    initiatedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    callbackReceivedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     resultCode?: NullableIntFieldUpdateOperationsInput | number | null
     resultDesc?: NullableStringFieldUpdateOperationsInput | string | null
     status?: StringFieldUpdateOperationsInput | string
@@ -7452,10 +7527,13 @@ export namespace Prisma {
     phoneNumber?: SortOrder
     amount?: SortOrder
     accountReference?: SortOrder
+    transactionDesc?: SortOrder
     merchantRequestId?: SortOrder
     checkoutRequestId?: SortOrder
     mpesaReceiptNumber?: SortOrder
     transactionDate?: SortOrder
+    initiatedAt?: SortOrder
+    callbackReceivedAt?: SortOrder
     resultCode?: SortOrder
     resultDesc?: SortOrder
     status?: SortOrder
@@ -7475,10 +7553,13 @@ export namespace Prisma {
     phoneNumber?: SortOrder
     amount?: SortOrder
     accountReference?: SortOrder
+    transactionDesc?: SortOrder
     merchantRequestId?: SortOrder
     checkoutRequestId?: SortOrder
     mpesaReceiptNumber?: SortOrder
     transactionDate?: SortOrder
+    initiatedAt?: SortOrder
+    callbackReceivedAt?: SortOrder
     resultCode?: SortOrder
     resultDesc?: SortOrder
     status?: SortOrder
@@ -7493,10 +7574,13 @@ export namespace Prisma {
     phoneNumber?: SortOrder
     amount?: SortOrder
     accountReference?: SortOrder
+    transactionDesc?: SortOrder
     merchantRequestId?: SortOrder
     checkoutRequestId?: SortOrder
     mpesaReceiptNumber?: SortOrder
     transactionDate?: SortOrder
+    initiatedAt?: SortOrder
+    callbackReceivedAt?: SortOrder
     resultCode?: SortOrder
     resultDesc?: SortOrder
     status?: SortOrder

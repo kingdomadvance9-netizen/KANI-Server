@@ -72,23 +72,27 @@ model RoomParticipant {
 }
 
 model MpesaTransaction {
-  id                  String   @id @default(uuid())
-  userId              String   // Clerk User ID
-  userName            String?  // User name from Clerk or M-Pesa
+  id                  String    @id @default(uuid())
+  userId              String    // Clerk User ID
+  userName            String?   // User name from Clerk or M-Pesa
   phoneNumber         String
-  amount              Decimal  @db.Decimal(10, 2)
-  accountReference    String   // Selected account/purpose
-  merchantRequestId   String?  @unique
-  checkoutRequestId   String?  @unique
+  amount              Decimal   @db.Decimal(10, 2)
+  accountReference    String    // Selected account/purpose
+  transactionDesc     String?   // Description sent to Safaricom
+  merchantRequestId   String?   @unique
+  checkoutRequestId   String?   @unique
   mpesaReceiptNumber  String?
   transactionDate     DateTime?
+  initiatedAt         DateTime? // When STK Push was sent
+  callbackReceivedAt  DateTime? // When Safaricom callback arrived
   resultCode          Int?
   resultDesc          String?
-  status              String   @default("PENDING") // PENDING, SUCCESS, FAILED, CANCELLED
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  status              String    @default("PENDING") // PENDING, SUCCESS, FAILED, CANCELLED
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@index([userId])
   @@index([phoneNumber])
   @@index([status])
+  @@index([checkoutRequestId, status]) // Composite index for faster status queries
 }
