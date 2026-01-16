@@ -11,6 +11,15 @@ import {
   removePeerFromRoom,
 } from "./mediasoup/rooms";
 import mpesaRoutes from "./mpesa/mpesa.routes";
+import {
+  checkPermission,
+  checkRateLimit,
+  auditLog,
+  getGlobalActionTargets,
+  isExemptFromGlobalControls,
+  canUnmute,
+  canStartScreenShare,
+} from "./permissions";
 
 const app = express();
 app.use(cors());
@@ -218,6 +227,8 @@ io.on("connection", (socket) => {
             isVideoPaused: p.isVideoPaused,
             isHost: p.role === "HOST",
             isCoHost: p.role === "COHOST",
+            audioLocked: p.audioLocked ?? false,
+            screenShareLocked: p.screenShareLocked ?? false,
           }))
         );
 
@@ -348,38 +359,63 @@ io.on("connection", (socket) => {
 
   socket.on("mute-all-participants", async ({ roomId, userId }: any) => {
     try {
-      // Check if requester is HOST or COHOST
+      // 1. Rate limiting
+      if (!checkRateLimit(userId)) {
+        await auditLog({
+          action: "GLOBAL_MUTE",
+          actor: userId,
+          roomId,
+          result: "DENIED",
+          reason: "RATE_LIMIT_EXCEEDED",
+          timestamp: new Date(),
+        });
+        return;
+      }
+
+      // 2. Permission check
+      const permissionResult = await checkPermission(userId, roomId, "GLOBAL_MUTE");
+
+      if (!permissionResult.allowed) {
+        if (permissionResult.shouldAuditLog) {
+          await auditLog({
+            action: "GLOBAL_MUTE",
+            actor: userId,
+            roomId,
+            result: "DENIED",
+            reason: permissionResult.reason || "UNAUTHORIZED",
+            timestamp: new Date(),
+          });
+        }
+        console.log(`❌ ${userId} unauthorized for global mute: ${permissionResult.reason}`);
+        return;
+      }
+
+      // 3. Get requester info
       const requester = await prisma.roomParticipant.findUnique({
         where: { roomId_userId: { roomId, userId } },
       });
 
-      if (
-        !requester ||
-        (requester.role !== "HOST" && requester.role !== "COHOST")
-      ) {
-        console.log(`❌ ${userId} tried to mute all but is not HOST or COHOST`);
-        return;
-      }
+      if (!requester) return;
 
-      // Get all participants except host
-      const participants = await prisma.roomParticipant.findMany({
-        where: {
-          roomId,
-          userId: { not: userId },
-        },
-      });
+      // 4. Get only PARTICIPANTS (not hosts or co-hosts) 🔥 CRITICAL FIX
+      const participants = await getGlobalActionTargets(roomId);
 
-      // Update all participants to muted
+      // 5. Update database - ONLY participants, set audioLocked = true
       await prisma.roomParticipant.updateMany({
         where: {
           roomId,
-          userId: { not: userId },
+          role: "PARTICIPANT", // 🔥 Only target participants
         },
-        data: { isAudioMuted: true },
+        data: {
+          isAudioMuted: true,
+          audioLocked: true, // 🔒 Lock so they cannot unmute themselves
+        },
       });
 
-      // Emit individual state changes to each participant
+      // 6. Get active sockets
       const targetSockets = await io.in(roomId).fetchSockets();
+
+      // 7. Emit force-mute to each PARTICIPANT only
       for (const participant of participants) {
         const targetSocket = targetSockets.find(
           (s: any) => s.data?.userId === participant.userId
@@ -389,17 +425,27 @@ io.on("connection", (socket) => {
           targetSocket.emit("force-mute", {
             audio: true,
             by: requester.name,
+            locked: true, // 🔒 Include lock state to match individual mute pattern
           });
 
-          // Broadcast state change to everyone else
-          socket.to(roomId).emit("participant-state-changed", {
+          // Broadcast state change
+          io.to(roomId).emit("participant-state-changed", {
             userId: participant.userId,
             isAudioMuted: true,
           });
         }
       }
 
-      console.log(`🔇 HOST ${requester.name} muted all participants`);
+      // 8. Audit log success
+      await auditLog({
+        action: "GLOBAL_MUTE",
+        actor: userId,
+        roomId,
+        result: "ALLOWED",
+        timestamp: new Date(),
+      });
+
+      console.log(`🔇 ${requester.name} (${requester.role}) muted all PARTICIPANTS in room ${roomId}`);
     } catch (err) {
       console.error("Error in mute-all-participants:", err);
     }
@@ -407,52 +453,75 @@ io.on("connection", (socket) => {
 
   socket.on("unmute-all-participants", async ({ roomId, userId }: any) => {
     try {
-      // Check if requester is HOST or COHOST
+      // 1. Rate limiting
+      if (!checkRateLimit(userId)) {
+        await auditLog({
+          action: "GLOBAL_UNMUTE",
+          actor: userId,
+          roomId,
+          result: "DENIED",
+          reason: "RATE_LIMIT_EXCEEDED",
+          timestamp: new Date(),
+        });
+        return;
+      }
+
+      // 2. Permission check
+      const permissionResult = await checkPermission(userId, roomId, "GLOBAL_UNMUTE");
+
+      if (!permissionResult.allowed) {
+        if (permissionResult.shouldAuditLog) {
+          await auditLog({
+            action: "GLOBAL_UNMUTE",
+            actor: userId,
+            roomId,
+            result: "DENIED",
+            reason: permissionResult.reason || "UNAUTHORIZED",
+            timestamp: new Date(),
+          });
+        }
+        console.log(`❌ ${userId} unauthorized for global unmute: ${permissionResult.reason}`);
+        return;
+      }
+
+      // 3. Get requester info
       const requester = await prisma.roomParticipant.findUnique({
         where: { roomId_userId: { roomId, userId } },
       });
 
-      if (
-        !requester ||
-        (requester.role !== "HOST" && requester.role !== "COHOST")
-      ) {
-        console.log(
-          `❌ ${userId} tried to unmute all but is not HOST or COHOST`
-        );
-        return;
-      }
+      if (!requester) return;
 
-      // Get all participants except host
-      const participants = await prisma.roomParticipant.findMany({
-        where: {
-          roomId,
-          userId: { not: userId },
-        },
-      });
+      // 4. Get only PARTICIPANTS (not hosts or co-hosts)
+      const participants = await getGlobalActionTargets(roomId);
 
-      // Update all participants to unmuted
+      // 5. Update database - ONLY participants, clear audioLocked
       await prisma.roomParticipant.updateMany({
         where: {
           roomId,
-          userId: { not: userId },
+          role: "PARTICIPANT",
         },
-        data: { isAudioMuted: false },
+        data: {
+          isAudioMuted: false,
+          audioLocked: false, // 🔓 Unlock so they can control their audio
+        },
       });
 
-      // Emit to restore audio control for each participant
+      // 6. Get active sockets
       const targetSockets = await io.in(roomId).fetchSockets();
+
+      // 7. Emit allow-unmute to each PARTICIPANT only
       for (const participant of participants) {
         const targetSocket = targetSockets.find(
           (s: any) => s.data?.userId === participant.userId
         );
 
         if (targetSocket) {
-          // Send event to allow user to unmute themselves
           targetSocket.emit("allow-unmute", {
             by: requester.name,
+            locked: false, // 🔓 Include unlock state to match individual unmute pattern
           });
 
-          // Broadcast state change to everyone
+          // Broadcast state change
           io.to(roomId).emit("participant-state-changed", {
             userId: participant.userId,
             isAudioMuted: false,
@@ -460,7 +529,16 @@ io.on("connection", (socket) => {
         }
       }
 
-      console.log(`🔊 HOST ${requester.name} unmuted all participants`);
+      // 8. Audit log success
+      await auditLog({
+        action: "GLOBAL_UNMUTE",
+        actor: userId,
+        roomId,
+        result: "ALLOWED",
+        timestamp: new Date(),
+      });
+
+      console.log(`🔊 ${requester.name} (${requester.role}) unmuted all PARTICIPANTS in room ${roomId}`);
     } catch (err) {
       console.error("Error in unmute-all-participants:", err);
     }
@@ -468,40 +546,63 @@ io.on("connection", (socket) => {
 
   socket.on("disable-all-cameras", async ({ roomId, userId }: any) => {
     try {
-      // Check if requester is HOST or COHOST
+      // 1. Rate limiting
+      if (!checkRateLimit(userId)) {
+        await auditLog({
+          action: "GLOBAL_CAMERA_DISABLE",
+          actor: userId,
+          roomId,
+          result: "DENIED",
+          reason: "RATE_LIMIT_EXCEEDED",
+          timestamp: new Date(),
+        });
+        return;
+      }
+
+      // 2. Permission check
+      const permissionResult = await checkPermission(userId, roomId, "GLOBAL_CAMERA_DISABLE");
+
+      if (!permissionResult.allowed) {
+        if (permissionResult.shouldAuditLog) {
+          await auditLog({
+            action: "GLOBAL_CAMERA_DISABLE",
+            actor: userId,
+            roomId,
+            result: "DENIED",
+            reason: permissionResult.reason || "UNAUTHORIZED",
+            timestamp: new Date(),
+          });
+        }
+        console.log(`❌ ${userId} unauthorized for global camera disable: ${permissionResult.reason}`);
+        return;
+      }
+
+      // 3. Get requester info
       const requester = await prisma.roomParticipant.findUnique({
         where: { roomId_userId: { roomId, userId } },
       });
 
-      if (
-        !requester ||
-        (requester.role !== "HOST" && requester.role !== "COHOST")
-      ) {
-        console.log(
-          `❌ ${userId} tried to disable all cameras but is not HOST or COHOST`
-        );
-        return;
-      }
+      if (!requester) return;
 
-      // Get all participants except host
-      const participants = await prisma.roomParticipant.findMany({
-        where: {
-          roomId,
-          userId: { not: userId },
-        },
-      });
+      // 4. Get only PARTICIPANTS (not hosts or co-hosts)
+      const participants = await getGlobalActionTargets(roomId);
 
-      // Update all participants video to paused
+      // 5. Update database - ONLY participants, set screenShareLocked
       await prisma.roomParticipant.updateMany({
         where: {
           roomId,
-          userId: { not: userId },
+          role: "PARTICIPANT",
         },
-        data: { isVideoPaused: true },
+        data: {
+          isVideoPaused: true,
+          screenShareLocked: true, // Lock screen share when disabling cameras
+        },
       });
 
-      // Emit to disable camera for each participant
+      // 6. Get active sockets
       const targetSockets = await io.in(roomId).fetchSockets();
+
+      // 7. Emit force-video-pause to each PARTICIPANT only
       for (const participant of participants) {
         const targetSocket = targetSockets.find(
           (s: any) => s.data?.userId === participant.userId
@@ -513,7 +614,7 @@ io.on("connection", (socket) => {
             by: requester.name,
           });
 
-          // Broadcast state change to everyone
+          // Broadcast state change
           io.to(roomId).emit("participant-state-changed", {
             userId: participant.userId,
             isVideoPaused: true,
@@ -521,7 +622,16 @@ io.on("connection", (socket) => {
         }
       }
 
-      console.log(`📹 HOST ${requester.name} disabled all cameras`);
+      // 8. Audit log success
+      await auditLog({
+        action: "GLOBAL_CAMERA_DISABLE",
+        actor: userId,
+        roomId,
+        result: "ALLOWED",
+        timestamp: new Date(),
+      });
+
+      console.log(`📹 ${requester.name} (${requester.role}) disabled all PARTICIPANTS cameras in room ${roomId}`);
     } catch (err) {
       console.error("Error in disable-all-cameras:", err);
     }
@@ -529,47 +639,74 @@ io.on("connection", (socket) => {
 
   socket.on("enable-all-cameras", async ({ roomId, userId }: any) => {
     try {
-      // Check if requester is HOST
+      // 1. Rate limiting
+      if (!checkRateLimit(userId)) {
+        await auditLog({
+          action: "GLOBAL_CAMERA_ENABLE",
+          actor: userId,
+          roomId,
+          result: "DENIED",
+          reason: "RATE_LIMIT_EXCEEDED",
+          timestamp: new Date(),
+        });
+        return;
+      }
+
+      // 2. Permission check
+      const permissionResult = await checkPermission(userId, roomId, "GLOBAL_CAMERA_ENABLE");
+
+      if (!permissionResult.allowed) {
+        if (permissionResult.shouldAuditLog) {
+          await auditLog({
+            action: "GLOBAL_CAMERA_ENABLE",
+            actor: userId,
+            roomId,
+            result: "DENIED",
+            reason: permissionResult.reason || "UNAUTHORIZED",
+            timestamp: new Date(),
+          });
+        }
+        console.log(`❌ ${userId} unauthorized for global camera enable: ${permissionResult.reason}`);
+        return;
+      }
+
+      // 3. Get requester info
       const requester = await prisma.roomParticipant.findUnique({
         where: { roomId_userId: { roomId, userId } },
       });
 
-      if (!requester || requester.role !== "HOST") {
-        console.log(`❌ ${userId} tried to enable all cameras but is not HOST`);
-        return;
-      }
+      if (!requester) return;
 
-      // Get all participants except host
-      const participants = await prisma.roomParticipant.findMany({
-        where: {
-          roomId,
-          userId: { not: userId },
-        },
-      });
+      // 4. Get only PARTICIPANTS (not hosts or co-hosts)
+      const participants = await getGlobalActionTargets(roomId);
 
-      // Update all participants video to unpaused
+      // 5. Update database - ONLY participants, clear screenShareLocked
       await prisma.roomParticipant.updateMany({
         where: {
           roomId,
-          userId: { not: userId },
+          role: "PARTICIPANT",
         },
-        data: { isVideoPaused: false },
+        data: {
+          isVideoPaused: false,
+          screenShareLocked: false, // Unlock screen share when enabling cameras
+        },
       });
 
-      // Emit to allow camera enable for each participant
+      // 6. Get active sockets
       const targetSockets = await io.in(roomId).fetchSockets();
+
+      // 7. Emit allow-unpause to each PARTICIPANT only
       for (const participant of participants) {
         const targetSocket = targetSockets.find(
           (s: any) => s.data?.userId === participant.userId
         );
 
         if (targetSocket) {
-          // Send event to allow user to enable their camera
           targetSocket.emit("allow-unpause", {
             by: requester.name,
           });
 
-          // Broadcast state change to everyone
+          // Broadcast state change
           io.to(roomId).emit("participant-state-changed", {
             userId: participant.userId,
             isVideoPaused: false,
@@ -577,7 +714,16 @@ io.on("connection", (socket) => {
         }
       }
 
-      console.log(`📹 HOST ${requester.name} enabled all cameras`);
+      // 8. Audit log success
+      await auditLog({
+        action: "GLOBAL_CAMERA_ENABLE",
+        actor: userId,
+        roomId,
+        result: "ALLOWED",
+        timestamp: new Date(),
+      });
+
+      console.log(`📹 ${requester.name} (${requester.role}) enabled all PARTICIPANTS cameras in room ${roomId}`);
     } catch (err) {
       console.error("Error in enable-all-cameras:", err);
     }
@@ -587,22 +733,55 @@ io.on("connection", (socket) => {
     "toggle-remote-audio",
     async ({ roomId, userId, targetUserId, force }: any) => {
       try {
-        // Check if requester has HOST role
-        const requester = await prisma.roomParticipant.findUnique({
-          where: {
-            roomId_userId: {
-              roomId,
-              userId,
-            },
-          },
-        });
-
-        if (!requester || requester.role !== "HOST") {
-          console.log(`❌ ${userId} tried to mute but is not HOST`);
+        // 1. Rate limiting
+        if (!checkRateLimit(userId)) {
+          await auditLog({
+            action: force === "mute" ? "MUTE_INDIVIDUAL" : "UNMUTE_INDIVIDUAL",
+            actor: userId,
+            target: targetUserId,
+            roomId,
+            result: "DENIED",
+            reason: "RATE_LIMIT_EXCEEDED",
+            timestamp: new Date(),
+          });
           return;
         }
 
-        // Update target user's audio state
+        // 2. Permission check (actor + target)
+        const action = force === "mute" ? "MUTE_INDIVIDUAL" : "UNMUTE_INDIVIDUAL";
+        const permissionResult = await checkPermission(
+          userId,
+          roomId,
+          action,
+          targetUserId
+        );
+
+        if (!permissionResult.allowed) {
+          if (permissionResult.shouldAuditLog) {
+            await auditLog({
+              action,
+              actor: userId,
+              target: targetUserId,
+              roomId,
+              result: "DENIED",
+              reason: permissionResult.reason || "UNAUTHORIZED",
+              timestamp: new Date(),
+            });
+          }
+          console.log(
+            `❌ ${userId} unauthorized to ${force} ${targetUserId}: ${permissionResult.reason}`
+          );
+          return;
+        }
+
+        // 3. Get requester info
+        const requester = await prisma.roomParticipant.findUnique({
+          where: { roomId_userId: { roomId, userId } },
+        });
+
+        if (!requester) return;
+
+        // 4. Update target user's audio state
         await prisma.roomParticipant.update({
           where: {
             roomId_userId: {
@@ -612,10 +791,11 @@ io.on("connection", (socket) => {
           },
           data: {
             isAudioMuted: force === "mute",
+            audioLocked: force === "mute", // Set lock when muting, clear when unmuting
           },
         });
 
-        // Find target's socket ID and emit force-mute
+        // 5. Find target's socket and emit control event
         const targetSockets = await io.in(roomId).fetchSockets();
         const targetSocket = targetSockets.find(
           (s: any) => s.data?.userId === targetUserId
@@ -623,17 +803,18 @@ io.on("connection", (socket) => {
 
         if (targetSocket) {
           if (force === "mute") {
-            // Mute the user and disable control
             targetSocket.emit("force-mute", {
               audio: true,
               by: requester.name,
+              locked: true, // Include lock state in emit
             });
           } else {
-            // Allow user to unmute themselves
             targetSocket.emit("allow-unmute", {
               by: requester.name,
+              locked: false, // Include lock state in emit
             });
           }
+
           // Broadcast state change to everyone
           io.to(roomId).emit("participant-state-changed", {
             userId: targetUserId,
@@ -641,11 +822,21 @@ io.on("connection", (socket) => {
           });
 
           console.log(
-            `🔇 HOST ${requester.name} ${
+            `🔇 ${requester.name} (${requester.role}) ${
               force === "mute" ? "muted" : "unmuted"
             } ${targetUserId}`
           );
         }
+
+        // 6. Audit log success
+        await auditLog({
+          action,
+          actor: userId,
+          target: targetUserId,
+          roomId,
+          result: "ALLOWED",
+          timestamp: new Date(),
+        });
       } catch (err) {
         console.error("Error in toggle-remote-audio:", err);
       }
@@ -656,22 +847,55 @@ io.on("connection", (socket) => {
     "toggle-remote-video",
     async ({ roomId, userId, targetUserId, force }: any) => {
       try {
-        // Check if requester has HOST role
-        const requester = await prisma.roomParticipant.findUnique({
-          where: {
-            roomId_userId: {
-              roomId,
-              userId,
-            },
-          },
-        });
-
-        if (!requester || requester.role !== "HOST") {
-          console.log(`❌ ${userId} tried to control video but is not HOST`);
+        // 1. Rate limiting
+        if (!checkRateLimit(userId)) {
+          await auditLog({
+            action: force === "disable" ? "DISABLE_CAMERA" : "ENABLE_CAMERA",
+            actor: userId,
+            target: targetUserId,
+            roomId,
+            result: "DENIED",
+            reason: "RATE_LIMIT_EXCEEDED",
+            timestamp: new Date(),
+          });
           return;
         }
 
-        // Update target user's video state
+        // 2. Permission check (actor + target)
+        const action = force === "disable" ? "DISABLE_CAMERA" : "ENABLE_CAMERA";
+        const permissionResult = await checkPermission(
+          userId,
+          roomId,
+          action,
+          targetUserId
+        );
+
+        if (!permissionResult.allowed) {
+          if (permissionResult.shouldAuditLog) {
+            await auditLog({
+              action,
+              actor: userId,
+              target: targetUserId,
+              roomId,
+              result: "DENIED",
+              reason: permissionResult.reason || "UNAUTHORIZED",
+              timestamp: new Date(),
+            });
+          }
+          console.log(
+            `❌ ${userId} unauthorized to ${force} camera for ${targetUserId}: ${permissionResult.reason}`
+          );
+          return;
+        }
+
+        // 3. Get requester info
+        const requester = await prisma.roomParticipant.findUnique({
+          where: { roomId_userId: { roomId, userId } },
+        });
+
+        if (!requester) return;
+
+        // 4. Update target user's video state
         await prisma.roomParticipant.update({
           where: {
             roomId_userId: {
@@ -680,18 +904,18 @@ io.on("connection", (socket) => {
             },
           },
           data: {
-            isVideoPaused: force === "pause",
+            isVideoPaused: force === "disable" || force === "pause",
           },
         });
 
-        // Find target's socket and emit force-video-pause
+        // 5. Find target's socket and emit control event
         const targetSockets = await io.in(roomId).fetchSockets();
         const targetSocket = targetSockets.find(
           (s: any) => s.data?.userId === targetUserId
         );
 
         if (targetSocket) {
-          if (force === "pause") {
+          if (force === "disable" || force === "pause") {
             // Pause video and disable control
             targetSocket.emit("force-video-pause", {
               video: true,
@@ -707,15 +931,25 @@ io.on("connection", (socket) => {
           // Broadcast state change to everyone
           io.to(roomId).emit("participant-state-changed", {
             userId: targetUserId,
-            isVideoPaused: force === "pause",
+            isVideoPaused: force === "disable" || force === "pause",
           });
 
           console.log(
-            `📹 HOST ${requester.name} ${
-              force === "pause" ? "paused" : "unpaused"
-            } video of ${targetUserId}`
+            `📹 ${requester.name} (${requester.role}) ${
+              force === "disable" || force === "pause" ? "disabled" : "enabled"
+            } camera of ${targetUserId}`
           );
         }
+
+        // 6. Audit log success
+        await auditLog({
+          action,
+          actor: userId,
+          target: targetUserId,
+          roomId,
+          result: "ALLOWED",
+          timestamp: new Date(),
+        });
       } catch (err) {
         console.error("Error in toggle-remote-video:", err);
       }
@@ -726,24 +960,54 @@ io.on("connection", (socket) => {
     "remove-participant",
     async ({ roomId, userId, targetUserId }: any) => {
       try {
-        // Check if requester has HOST role
-        const requester = await prisma.roomParticipant.findUnique({
-          where: {
-            roomId_userId: {
-              roomId,
-              userId,
-            },
-          },
-        });
+        // 1. Rate limiting
+        if (!checkRateLimit(userId)) {
+          await auditLog({
+            action: "REMOVE_FROM_ROOM",
+            actor: userId,
+            target: targetUserId,
+            roomId,
+            result: "DENIED",
+            reason: "RATE_LIMIT_EXCEEDED",
+            timestamp: new Date(),
+          });
+          return;
+        }
 
-        if (!requester || requester.role !== "HOST") {
+        // 2. Permission check (actor + target)
+        const permissionResult = await checkPermission(
+          userId,
+          roomId,
+          "REMOVE_FROM_ROOM",
+          targetUserId
+        );
+
+        if (!permissionResult.allowed) {
+          if (permissionResult.shouldAuditLog) {
+            await auditLog({
+              action: "REMOVE_FROM_ROOM",
+              actor: userId,
+              target: targetUserId,
+              roomId,
+              result: "DENIED",
+              reason: permissionResult.reason || "UNAUTHORIZED",
+              timestamp: new Date(),
+            });
+          }
           console.log(
-            `❌ ${userId} tried to remove participant but is not HOST`
+            `❌ ${userId} unauthorized to remove ${targetUserId}: ${permissionResult.reason}`
           );
           return;
         }
 
-        // Delete participant from DB
+        // 3. Get requester info
+        const requester = await prisma.roomParticipant.findUnique({
+          where: { roomId_userId: { roomId, userId } },
+        });
+
+        if (!requester) return;
+
+        // 4. Delete participant from DB
         await prisma.roomParticipant.delete({
           where: {
             roomId_userId: {
@@ -753,7 +1017,7 @@ io.on("connection", (socket) => {
           },
         });
 
-        // Find target's socket and force disconnect
+        // 5. Find target's socket and force disconnect
         const targetSockets = await io.in(roomId).fetchSockets();
         const targetSocket = targetSockets.find(
           (s: any) => s.data?.userId === targetUserId
@@ -766,11 +1030,11 @@ io.on("connection", (socket) => {
           });
           targetSocket.leave(roomId);
           console.log(
-            `🚫 HOST ${requester.name} removed ${targetUserId} from room`
+            `🚫 ${requester.name} (${requester.role}) removed ${targetUserId} from room`
           );
         }
 
-        // Broadcast updated participant list
+        // 6. Broadcast updated participant list
         const participants = await prisma.roomParticipant.findMany({
           where: { roomId },
         });
@@ -784,8 +1048,21 @@ io.on("connection", (socket) => {
             isAudioMuted: p.isAudioMuted,
             isVideoPaused: p.isVideoPaused,
             isHost: p.role === "HOST",
+            isCoHost: p.role === "COHOST",
+            audioLocked: p.audioLocked ?? false,
+            screenShareLocked: p.screenShareLocked ?? false,
           }))
         );
+
+        // 7. Audit log success
+        await auditLog({
+          action: "REMOVE_FROM_ROOM",
+          actor: userId,
+          target: targetUserId,
+          roomId,
+          result: "ALLOWED",
+          timestamp: new Date(),
+        });
       } catch (err) {
         console.error("Error in remove-participant:", err);
       }
@@ -1052,6 +1329,8 @@ io.on("connection", (socket) => {
                   isVideoPaused: p.isVideoPaused,
                   isHost: p.role === "HOST",
                   isCoHost: p.role === "COHOST",
+                  audioLocked: p.audioLocked ?? false,
+                  screenShareLocked: p.screenShareLocked ?? false,
                 });
               }
             });
@@ -1070,6 +1349,8 @@ io.on("connection", (socket) => {
               isVideoPaused: false,
               isHost: p.isHost || false,
               isCoHost: p.isCoHost || false,
+              audioLocked: false,
+              screenShareLocked: false,
             }));
             console.log(
               `📋 Using memory participant list (${participants.length} participants)`
@@ -1086,6 +1367,8 @@ io.on("connection", (socket) => {
             isVideoPaused: false,
             isHost: p.isHost || false,
             isCoHost: p.isCoHost || false,
+            audioLocked: false,
+            screenShareLocked: false,
           }));
         }
 
@@ -1238,8 +1521,39 @@ io.on("connection", (socket) => {
           return cb({ error: "Peer not found" });
         }
 
-        // ✅ Check if screen sharing is globally disabled
+        // ✅ LOCK VALIDATION: Check if user is allowed to produce based on locks
+        const userId = peer.userId || (socket as any).data?.userId;
         const requestingScreenShare = appData?.share || false;
+
+        // Check audio lock
+        if (kind === "audio" && userId) {
+          const canUnmuteResult = await canUnmute(userId, roomId);
+          if (!canUnmuteResult.allowed) {
+            console.warn(
+              `🔒 Audio producer denied for ${socket.id} - ${canUnmuteResult.reason}`
+            );
+            socket.emit("audio-locked", {
+              reason: "You have been muted by the host and cannot unmute yourself",
+            });
+            return cb({ error: "Audio is locked by host" });
+          }
+        }
+
+        // Check screen share lock
+        if (requestingScreenShare && userId) {
+          const canShareResult = await canStartScreenShare(userId, roomId);
+          if (!canShareResult.allowed) {
+            console.warn(
+              `🔒 Screen share denied for ${socket.id} - ${canShareResult.reason}`
+            );
+            socket.emit("screenshare-denied", {
+              reason: "Screen sharing has been disabled by the host",
+            });
+            return cb({ error: "Screen sharing is locked by host" });
+          }
+        }
+
+        // Check if screen sharing is globally disabled
         if (requestingScreenShare && !room.screenShareEnabled) {
           console.warn(
             `⛔ Screen share denied for ${socket.id} - disabled by host`
@@ -1592,33 +1906,71 @@ io.on("connection", (socket) => {
   // ✅ Make participant a co-host
   socket.on("make-cohost", async ({ roomId, participantId }) => {
     try {
+      const actorUserId = (socket as any).data?.userId;
+
       console.log("📥 Received make-cohost:", {
         roomId,
         participantId,
+        actorUserId,
         fromSocket: socket.id,
       });
 
-      const room = await getOrCreateRoom(roomId);
-      const requester = room.peers.get(socket.id);
-
-      console.log("🔍 Requester check:", {
-        socketId: socket.id,
-        requesterExists: !!requester,
-        requesterIsHost: requester?.isHost,
-        requesterName: requester?.name,
-        requesterUserId: requester?.userId,
-      });
-
-      // Verify authorization - only host can promote co-hosts
-      if (!requester?.isHost) {
-        console.warn(
-          `⛔ Non-host ${socket.id} (${requester?.name}) attempted to make co-host`
-        );
-        socket.emit("error", { message: "Only hosts can promote co-hosts" });
+      // 1. Rate limiting
+      if (actorUserId && !checkRateLimit(actorUserId)) {
+        await auditLog({
+          action: "MAKE_COHOST",
+          actor: actorUserId,
+          target: participantId,
+          roomId,
+          result: "DENIED",
+          reason: "RATE_LIMIT_EXCEEDED",
+          timestamp: new Date(),
+        });
+        socket.emit("error", { message: "Too many actions. Please wait." });
         return;
       }
 
-      // Find target participant in database
+      // 2. Permission check
+      if (actorUserId) {
+        const permissionResult = await checkPermission(
+          actorUserId,
+          roomId,
+          "MAKE_COHOST",
+          participantId
+        );
+
+        if (!permissionResult.allowed) {
+          if (permissionResult.shouldAuditLog) {
+            await auditLog({
+              action: "MAKE_COHOST",
+              actor: actorUserId,
+              target: participantId,
+              roomId,
+              result: "DENIED",
+              reason: permissionResult.reason || "UNAUTHORIZED",
+              timestamp: new Date(),
+            });
+          }
+          console.log(
+            `❌ ${actorUserId} unauthorized to promote ${participantId}: ${permissionResult.reason}`
+          );
+          socket.emit("error", {
+            message: "You don't have permission to promote co-hosts",
+          });
+          return;
+        }
+      }
+
+      // 3. Get requester and room
+      const room = await getOrCreateRoom(roomId);
+      const requester = room.peers.get(socket.id);
+
+      if (!requester) {
+        socket.emit("error", { message: "Requester not found" });
+        return;
+      }
+
+      // 4. Find target participant in database
       const targetParticipant = await prisma.roomParticipant.findUnique({
         where: {
           roomId_userId: {
@@ -1639,7 +1991,7 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Update participant role in database
+      // 5. Update participant role in database
       await prisma.roomParticipant.update({
         where: {
           roomId_userId: {
@@ -1652,7 +2004,7 @@ io.on("connection", (socket) => {
         },
       });
 
-      // Update in-memory peer if they're connected
+      // 6. Update in-memory peer if they're connected
       for (const [peerId, peer] of room.peers) {
         if (peer.userId === participantId) {
           peer.isCoHost = true;
@@ -1661,20 +2013,10 @@ io.on("connection", (socket) => {
       }
 
       console.log(
-        `🤝 ${participantId} promoted to co-host by ${
-          requester.name || socket.id
-        }`
+        `🤝 ${participantId} promoted to co-host by ${requester.name || socket.id}`
       );
 
-      // Broadcast to all participants in room
-      io.to(roomId).emit("participant-updated", {
-        participantId,
-        updates: {
-          isCoHost: true,
-        },
-      });
-
-      // Find target's socket ID to notify them directly
+      // 7. Find target's socket ID
       let targetSocketId = null;
       for (const [peerId, peer] of room.peers) {
         if (peer.userId === participantId) {
@@ -1683,17 +2025,65 @@ io.on("connection", (socket) => {
         }
       }
 
-      // Notify the promoted user
+      // 8. 🔥 CRITICAL: Check for active global controls and immediately exempt
       if (targetSocketId) {
+        // Check if participant was previously muted by global control
+        if (targetParticipant.isAudioMuted) {
+          // Check if there are other participants still muted (indicating global mute might be active)
+          const mutedCount = await prisma.roomParticipant.count({
+            where: { roomId, role: "PARTICIPANT", isAudioMuted: true },
+          });
+
+          if (mutedCount > 0) {
+            // Global mute likely active, exempt the new co-host
+            io.to(targetSocketId).emit("allow-unmute", {
+              audio: false,
+              reason: "Promoted to Co-Host",
+            });
+            console.log(
+              `🔓 Exempted ${participantId} from global audio mute (promoted to co-host)`
+            );
+          }
+        }
+
+        // Check if participant's video was paused by global control
+        if (targetParticipant.isVideoPaused) {
+          // Check if there are other participants with paused video (indicating global disable might be active)
+          const pausedCount = await prisma.roomParticipant.count({
+            where: { roomId, role: "PARTICIPANT", isVideoPaused: true },
+          });
+
+          if (pausedCount > 0) {
+            // Global video disable likely active, exempt the new co-host
+            io.to(targetSocketId).emit("allow-video-enable", {
+              video: false,
+              reason: "Promoted to Co-Host",
+            });
+            console.log(
+              `🔓 Exempted ${participantId} from global video disable (promoted to co-host)`
+            );
+          }
+        }
+
+        // Notify the promoted user
         io.to(targetSocketId).emit("cohost-granted", {
           by: requester.name || "Host",
+          roomId,
         });
       }
 
-      // Confirm to host
+      // 9. Broadcast to all participants in room
+      io.to(roomId).emit("participant-updated", {
+        participantId,
+        updates: {
+          isCoHost: true,
+        },
+      });
+
+      // 10. Confirm to host
       socket.emit("success", { message: "Co-host status granted" });
 
-      // Refresh participant list for all
+      // 11. Refresh participant list for all
       const participants = await prisma.roomParticipant.findMany({
         where: { roomId },
       });
@@ -1707,8 +2097,22 @@ io.on("connection", (socket) => {
           isVideoPaused: p.isVideoPaused,
           isHost: p.role === "HOST",
           isCoHost: p.role === "COHOST",
+          audioLocked: p.audioLocked ?? false,
+          screenShareLocked: p.screenShareLocked ?? false,
         }))
       );
+
+      // 12. Audit log success
+      if (actorUserId) {
+        await auditLog({
+          action: "MAKE_COHOST",
+          actor: actorUserId,
+          target: participantId,
+          roomId,
+          result: "ALLOWED",
+          timestamp: new Date(),
+        });
+      }
     } catch (err: any) {
       console.error("❌ Error in make-cohost:", err);
       socket.emit("error", { message: err.message });
@@ -1743,7 +2147,23 @@ io.on("connection", (socket) => {
         return;
       }
 
-      // Update participant role in database
+      // Check if global locks are active before demotion
+      const globalLockStatus = await prisma.roomParticipant.findFirst({
+        where: {
+          roomId,
+          role: "PARTICIPANT",
+          OR: [{ audioLocked: true }, { screenShareLocked: true }],
+        },
+        select: {
+          audioLocked: true,
+          screenShareLocked: true,
+        },
+      });
+
+      const shouldApplyAudioLock = globalLockStatus?.audioLocked ?? false;
+      const shouldApplyScreenShareLock = globalLockStatus?.screenShareLocked ?? false;
+
+      // Update participant role in database and re-apply locks if needed
       await prisma.roomParticipant.update({
         where: {
           roomId_userId: {
@@ -1753,6 +2173,8 @@ io.on("connection", (socket) => {
         },
         data: {
           role: "PARTICIPANT",
+          audioLocked: shouldApplyAudioLock,
+          screenShareLocked: shouldApplyScreenShareLock,
         },
       });
 
@@ -1767,7 +2189,9 @@ io.on("connection", (socket) => {
       console.log(
         `👥 ${participantId} demoted from co-host by ${
           requester.name || socket.id
-        }`
+        }`,
+        shouldApplyAudioLock ? "🔒 Audio locked" : "",
+        shouldApplyScreenShareLock ? "🔒 Screen share locked" : ""
       );
 
       // Broadcast to all participants in room
@@ -1787,11 +2211,30 @@ io.on("connection", (socket) => {
         }
       }
 
-      // Notify the demoted user
+      // Notify the demoted user and re-apply locks if needed
       if (targetSocketId) {
         io.to(targetSocketId).emit("cohost-revoked", {
           by: requester.name || "Host",
         });
+
+        // Re-apply audio lock if global mute is active
+        if (shouldApplyAudioLock) {
+          io.to(targetSocketId).emit("force-mute", {
+            audio: true,
+            by: "Host",
+            locked: true,
+          });
+          console.log(`🔒 Re-applied audio lock to demoted user ${participantId}`);
+        }
+
+        // Re-apply screen share lock if global disable is active
+        if (shouldApplyScreenShareLock) {
+          io.to(targetSocketId).emit("screenshare-control", {
+            enabled: false,
+            by: "Host",
+          });
+          console.log(`🔒 Re-applied screen share lock to demoted user ${participantId}`);
+        }
       }
 
       // Confirm to host
@@ -1811,6 +2254,8 @@ io.on("connection", (socket) => {
           isVideoPaused: p.isVideoPaused,
           isHost: p.role === "HOST",
           isCoHost: p.role === "COHOST",
+          audioLocked: p.audioLocked ?? false,
+          screenShareLocked: p.screenShareLocked ?? false,
         }))
       );
     } catch (err: any) {
@@ -2080,13 +2525,15 @@ io.on("connection", (socket) => {
 
       // Update participant list
       const participants = Array.from(room.peers.values()).map((p) => ({
-        id: p.socketId,
+        id: p.userId || p.socketId,
         name: p.name,
         imageUrl: p.imageUrl,
         isAudioMuted: false,
         isVideoPaused: false,
         isHost: p.isHost || false,
         isCoHost: p.isCoHost || false,
+        audioLocked: false,
+        screenShareLocked: false,
       }));
       io.to(roomId).emit("participant-list-update", participants);
     } catch (err) {
@@ -2117,13 +2564,15 @@ io.on("connection", (socket) => {
 
       // Update participant list
       const participants = Array.from(room.peers.values()).map((p) => ({
-        id: p.socketId,
+        id: p.userId || p.socketId,
         name: p.name,
         imageUrl: p.imageUrl,
         isAudioMuted: false,
         isVideoPaused: false,
         isHost: p.isHost || false,
         isCoHost: p.isCoHost || false,
+        audioLocked: false,
+        screenShareLocked: false,
       }));
       io.to(roomId).emit("participant-list-update", participants);
     } catch (err) {
@@ -2154,18 +2603,37 @@ io.on("connection", (socket) => {
         // Remove peer from mediasoup
         removePeerFromRoom(roomId, socket.id);
 
+        // 🔥 DELETE FROM DATABASE - This is critical!
+        if (userId) {
+          try {
+            await prisma.roomParticipant.delete({
+              where: {
+                roomId_userId: {
+                  roomId,
+                  userId,
+                },
+              },
+            });
+            console.log(`🗑️ Deleted ${userId} from database for room ${roomId}`);
+          } catch (dbErr) {
+            console.error("Error deleting participant from DB:", dbErr);
+          }
+        }
+
         // Get room if it still exists (might be deleted if last peer)
         const room = await getOrCreateRoom(roomId).catch(() => null);
         if (!room) continue;
 
         // Update participant list with remaining users
         const participants = Array.from(room.peers.values()).map((p) => ({
-          id: p.socketId,
+          id: p.userId || p.socketId,
           name: p.name,
           imageUrl: p.imageUrl,
           isAudioMuted: false,
           isVideoPaused: false,
           isHost: p.isHost || false,
+          audioLocked: false,
+          screenShareLocked: false,
         }));
 
         if (participants.length > 0) {
