@@ -105,12 +105,14 @@ export const getRoom = (roomId: string) => rooms.get(roomId);
  * Creates the server-side transport for a peer to send or receive audio.
  */
 export const createWebRtcTransport = async (router: Router) => {
+  const announcedIp = process.env.RAILWAY_PUBLIC_DOMAIN || "127.0.0.1";
+  console.log(`🌐 Creating transport with announcedIp: ${announcedIp}`);
+
   const transport = await router.createWebRtcTransport({
     listenIps: [
       {
         ip: "0.0.0.0", // Binds to all interfaces
-        // On Railway, announcedIp is your public domain/IP
-        announcedIp: process.env.RAILWAY_PUBLIC_DOMAIN || "127.0.0.1",
+        announcedIp,
       },
     ],
     enableUdp: true,
@@ -118,6 +120,7 @@ export const createWebRtcTransport = async (router: Router) => {
     preferUdp: true,
   });
 
+  console.log(`📡 Transport ICE candidates:`, JSON.stringify(transport.iceCandidates, null, 2));
   return transport;
 };
 
