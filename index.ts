@@ -25,6 +25,22 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Health check endpoint
+app.get("/", (req, res) => {
+  res.json({
+    status: "online",
+    message: "KANI Server - WebRTC Video Conferencing API",
+    version: "1.0.0",
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      socket: "ws://161.97.67.188:8080 (Socket.IO)",
+      mpesa: "/api/mpesa",
+      debug: "/debug/room/:roomId"
+    },
+    documentation: "See README.md for full API documentation"
+  });
+});
+
 // M-Pesa API routes
 app.use("/api/mpesa", mpesaRoutes);
 
