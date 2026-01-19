@@ -30,3 +30,13 @@ prisma
   .$connect()
   .then(() => console.log("🟢 Prisma Connected Successfully"))
   .catch((err) => console.error("🔴 Prisma Connection Error:", err.message));
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
+}
+
+// Test connection
+prisma
+  .$connect()
+  .then(() => console.log("🟢 Prisma Connected Successfully"))
+  .catch((err) => console.error("🔴 Prisma Connection Error:", err.message));
