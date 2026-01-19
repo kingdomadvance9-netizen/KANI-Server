@@ -52,14 +52,16 @@ model Room {
 }
 
 model RoomParticipant {
-  id            String  @id @default(uuid())
-  roomId        String
-  userId        String // Clerk User ID
-  name          String
-  imageUrl      String?
-  role          String  @default("PARTICIPANT") // "HOST" or "PARTICIPANT"
-  isAudioMuted  Boolean @default(false)
-  isVideoPaused Boolean @default(false)
+  id                String  @id @default(uuid())
+  roomId            String
+  userId            String // Clerk User ID
+  name              String
+  imageUrl          String?
+  role              String  @default("PARTICIPANT") // "HOST" or "PARTICIPANT" or "COHOST"
+  isAudioMuted      Boolean @default(false)
+  isVideoPaused     Boolean @default(false)
+  audioLocked       Boolean @default(false) // Cannot unmute when true
+  screenShareLocked Boolean @default(false) // Cannot screen share when true
 
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
@@ -73,10 +75,13 @@ model MpesaTransaction {
   phoneNumber        String
   amount             Decimal   @db.Decimal(10, 2)
   accountReference   String // Selected account/purpose
+  transactionDesc    String? // Description sent to Safaricom
   merchantRequestId  String?   @unique
   checkoutRequestId  String?   @unique
   mpesaReceiptNumber String?
   transactionDate    DateTime?
+  initiatedAt        DateTime? // When STK Push was sent
+  callbackReceivedAt DateTime? // When Safaricom callback arrived
   resultCode         Int?
   resultDesc         String?
   status             String    @default("PENDING") // PENDING, SUCCESS, FAILED, CANCELLED
@@ -86,4 +91,5 @@ model MpesaTransaction {
   @@index([userId])
   @@index([phoneNumber])
   @@index([status])
+  @@index([checkoutRequestId, status]) // Composite index for faster status queries
 }

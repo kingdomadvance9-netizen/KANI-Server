@@ -184,7 +184,7 @@ const config = {
       "value": "prisma-client-js"
     },
     "output": {
-      "value": "C:\\Users\\brabyns.yabwetsa\\Documents\\Brabyns-projects\\grace-server\\generated\\prisma",
+      "value": "C:\\Users\\brabyns.yabwetsa\\Documents\\Brabyns-projects\\kani-server\\generated\\prisma",
       "fromEnvVar": null
     },
     "config": {
@@ -198,7 +198,7 @@ const config = {
       }
     ],
     "previewFeatures": [],
-    "sourceFilePath": "C:\\Users\\brabyns.yabwetsa\\Documents\\Brabyns-projects\\grace-server\\prisma\\schema.prisma",
+    "sourceFilePath": "C:\\Users\\brabyns.yabwetsa\\Documents\\Brabyns-projects\\kani-server\\prisma\\schema.prisma",
     "isCustomOutput": true
   },
   "relativeEnvPaths": {
@@ -212,6 +212,7 @@ const config = {
     "db"
   ],
   "activeProvider": "postgresql",
+  "postinstall": false,
   "inlineDatasources": {
     "db": {
       "url": {
