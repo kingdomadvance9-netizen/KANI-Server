@@ -1634,16 +1634,18 @@ io.on("connection", (socket) => {
             producerId: string;
             peerId: string;
             userId: string;
+            userName: string;
             kind: string;
             isScreenShare: boolean;
           }> = [];
           for (const [peerId, peer] of room.peers) {
-            if (peerId !== socket.id) {
+            if (peerId !== socket.id && peer.userId) {
               peer.producers.forEach((producer) => {
                 existingProducers.push({
                   producerId: producer.id,
                   peerId: peerId,
-                  userId: peer.userId || peerId, // Include userId for proper mapping
+                  userId: peer.userId!, // userId is guaranteed to exist
+                  userName: peer.name || "Unknown",
                   kind: producer.kind,
                   isScreenShare:
                     producer.appData?.share ||
@@ -1653,6 +1655,7 @@ io.on("connection", (socket) => {
               });
             }
           }
+          console.log(`📡 Returning existing producers for duplicate join:`, existingProducers.length);
           return cb({ success: true, existingProducers, alreadyJoined: true });
         }
 
@@ -1730,64 +1733,103 @@ io.on("connection", (socket) => {
         // ====== MEDIASOUP SETUP ======
         socket.join(roomId);
 
-        // ✅ Check if peer already has host status set (from join-room)
-        const previousPeer = room.peers.get(socket.id);
+        // ====== HOST OWNERSHIP ENFORCEMENT ======
+        // RULE: Only the meeting creator (room.creatorId) can be HOST
+        // RULE: Never assign host based on join order
         let shouldBeHost = false;
         let shouldBeCoHost = false;
 
-        if (previousPeer && (previousPeer.isHost || previousPeer.isCoHost)) {
-          // Peer already exists from join-room with host/cohost status, preserve it
-          shouldBeHost = previousPeer.isHost || false;
-          shouldBeCoHost = previousPeer.isCoHost || false;
-          console.log(`♻️ Preserving existing peer status from join-room:`, {
-            userId,
-            isHost: shouldBeHost,
-            isCoHost: shouldBeCoHost,
+        if (!userId) {
+          console.error("❌ Cannot join without userId - host status requires authentication");
+          return cb({ error: "userId is required" });
+        }
+
+        try {
+          const dbRoom = await prisma.room.findUnique({
+            where: { id: roomId },
           });
-        } else {
-          // Need to determine host status from database
-          if (userId) {
-            try {
-              const dbRoom = await prisma.room.findUnique({
-                where: { id: roomId },
-              });
 
-              const dbParticipant = await prisma.roomParticipant.findUnique({
-                where: {
-                  roomId_userId: {
-                    roomId,
-                    userId,
-                  },
-                },
-              });
-
-              // User is host if they're the creator or already marked as HOST in DB
-              shouldBeHost =
-                (dbRoom && dbRoom.creatorId === userId) ||
-                dbParticipant?.role === "HOST";
-
-              // User is co-host if marked in DB
-              shouldBeCoHost = dbParticipant?.role === "COHOST";
-
-              console.log(`🔍 Host check for ${userName}:`, {
-                userId,
-                creatorId: dbRoom?.creatorId,
-                dbRole: dbParticipant?.role,
-                isCreator: dbRoom?.creatorId === userId,
-                shouldBeHost,
-                shouldBeCoHost,
-              });
-            } catch (err) {
-              console.error("❌ Error checking host status:", err);
-              // Fallback to original logic
-              const isFirstPerson = room.peers.size === 0;
-              shouldBeHost = isCreator === true || isFirstPerson;
-            }
-          } else {
-            // No userId - use fallback logic
-            const isFirstPerson = room.peers.size === 0;
-            shouldBeHost = isCreator === true || isFirstPerson;
+          if (!dbRoom) {
+            console.error("❌ Room not found in database:", roomId);
+            return cb({ error: "Room not found" });
           }
+
+          const dbParticipant = await prisma.roomParticipant.findUnique({
+            where: {
+              roomId_userId: {
+                roomId,
+                userId,
+              },
+            },
+          });
+
+          // User is HOST if and only if they are the room creator
+          shouldBeHost = dbRoom.creatorId === userId;
+
+          // User is co-host if marked in DB (but not if they're the creator)
+          shouldBeCoHost = !shouldBeHost && dbParticipant?.role === "COHOST";
+
+          console.log(`🔍 Host check for ${userName}:`, {
+            userId,
+            creatorId: dbRoom.creatorId,
+            dbRole: dbParticipant?.role,
+            isCreator: dbRoom.creatorId === userId,
+            shouldBeHost,
+            shouldBeCoHost,
+          });
+
+          // ✅ CRITICAL: If this user is the creator, ensure they are marked as HOST in DB
+          // and demote any other users who may have been incorrectly marked as HOST
+          if (shouldBeHost) {
+            // Update this user to be HOST
+            await prisma.roomParticipant.update({
+              where: {
+                roomId_userId: {
+                  roomId,
+                  userId,
+                },
+              },
+              data: {
+                role: "HOST",
+              },
+            });
+
+            // Demote any other users who are marked as HOST (they shouldn't be)
+            await prisma.roomParticipant.updateMany({
+              where: {
+                roomId,
+                userId: {
+                  not: userId,
+                },
+                role: "HOST",
+              },
+              data: {
+                role: "PARTICIPANT",
+              },
+            });
+
+            // Update in-memory peers - demote any other hosts
+            for (const [peerId, peer] of room.peers) {
+              if (peer.userId !== userId && peer.isHost) {
+                peer.isHost = false;
+                console.log(`⬇️ Demoted ${peer.name} from HOST (creator joined)`);
+
+                // Notify the demoted user
+                const demotedSocket = await io.in(peerId).fetchSockets();
+                if (demotedSocket.length > 0) {
+                  demotedSocket[0].emit("role-changed", {
+                    role: "PARTICIPANT",
+                    reason: "Meeting owner joined",
+                  });
+                }
+              }
+            }
+
+            console.log(`👑 ${userName} is the meeting creator - enforcing HOST status`);
+          }
+        } catch (err) {
+          console.error("❌ Error checking host status:", err);
+          return cb({ error: "Failed to verify host status" });
         }
 
         console.log(
@@ -1809,20 +1851,23 @@ io.on("connection", (socket) => {
         });
 
         // ✅ FIXED: Include peerId, userId and producer details for existing producers
+        // CRITICAL: Only include producers from peers with valid userId
         const existingProducers: Array<{
           producerId: string;
           peerId: string;
           userId: string;
+          userName: string;
           kind: string;
           isScreenShare: boolean;
         }> = [];
         for (const [peerId, peer] of room.peers) {
-          if (peerId !== socket.id) {
+          if (peerId !== socket.id && peer.userId) {
             peer.producers.forEach((producer) => {
               existingProducers.push({
                 producerId: producer.id,
                 peerId: peerId,
-                userId: peer.userId || peerId, // Include userId for proper mapping
+                userId: peer.userId!, // userId is guaranteed to exist
+                userName: peer.name || "Unknown",
                 kind: producer.kind,
                 isScreenShare:
                   producer.appData?.share ||
@@ -1832,6 +1877,14 @@ io.on("connection", (socket) => {
             });
           }
         }
+
+        console.log(`📡 Sending ${existingProducers.length} existing producers to ${userName}:`,
+          existingProducers.map(p => ({
+            kind: p.kind,
+            userId: p.userId,
+            isScreenShare: p.isScreenShare
+          }))
+        );
 
         // ✅ CRITICAL: Get participant list from DATABASE if available
         let participants;
@@ -1904,11 +1957,17 @@ io.on("connection", (socket) => {
         io.to(roomId).emit("participant-list-update", participants);
 
         // ✅ Notify other peers that a new consumer is ready
+        // They should prepare to send their producers to this new peer
         socket.to(roomId).emit("new-peer-joined", {
           peerId: socket.id,
+          userId: userId,
           name: userName,
           imageUrl: userImageUrl,
+          isHost: shouldBeHost,
+          isCoHost: shouldBeCoHost,
         });
+
+        console.log(`📢 Notified existing peers that ${userName} (${userId}) joined`);
 
         console.log(`🎧 Mediasoup ready for ${socket.id} in ${roomId}`);
 
@@ -2138,10 +2197,17 @@ io.on("connection", (socket) => {
         );
 
         // ✅ CRITICAL: Include peerId, userId and screen share info
+        // MUST have userId - cannot fallback to socket.id as it breaks client mapping
+        if (!peer.userId) {
+          console.error("❌ Cannot emit new-producer without userId");
+          return cb({ error: "User identification required" });
+        }
+
         const producerEvent = {
           producerId: producer.id,
           peerId: socket.id,
-          userId: peer.userId || socket.id, // Include userId for proper stream mapping
+          userId: peer.userId,
+          userName: peer.name || "Unknown",
           kind,
           isScreenShare,
         };
@@ -2193,7 +2259,13 @@ io.on("connection", (socket) => {
         return cb({ error: "No receive transport found" });
       }
 
-      console.log(`✅ Using recv transport: ${transport.id}`);
+      // ✅ Ensure transport is connected (not closed)
+      if (transport.closed) {
+        console.error(`❌ Receive transport ${transport.id} is closed`);
+        return cb({ error: "Receive transport is closed" });
+      }
+
+      console.log(`✅ Using recv transport: ${transport.id} (connected: ${transport.dtlsState === 'connected' || transport.iceState === 'connected'})`);
 
       // ✅ Find the producer's peer ID and producer details
       let producerPeerId = "";
@@ -2270,6 +2342,12 @@ io.on("connection", (socket) => {
 
       // ✅ CRITICAL: Include userId and screen share flag so client knows whose stream this is
       const producerPeer = room.peers.get(producerPeerId);
+
+      if (!producerPeer?.userId) {
+        console.error(`❌ Cannot consume - producer peer ${producerPeerId} has no userId`);
+        return cb({ error: "Producer peer has no user identification" });
+      }
+
       const response = {
         producerId,
         id: consumer.id,
@@ -2278,7 +2356,8 @@ io.on("connection", (socket) => {
         type: consumer.type,
         producerPaused: consumer.producerPaused,
         peerId: producerPeerId,
-        userId: producerPeer?.userId || producerPeerId, // Send userId for proper mapping
+        userId: producerPeer.userId, // ALWAYS valid - no fallback
+        userName: producerPeer.name || "Unknown",
         producerSocketId: producerPeerId,
         isScreenShare:
           producer.appData?.share || producer.appData?.isScreenShare || false,
@@ -2289,7 +2368,9 @@ io.on("connection", (socket) => {
         consumerId: response.id,
         kind: response.kind,
         userId: response.userId,
+        userName: response.userName,
         peerId: response.peerId,
+        isScreenShare: response.isScreenShare,
       });
       cb(response);
     } catch (err: any) {
@@ -2354,13 +2435,19 @@ io.on("connection", (socket) => {
       peer.producers.delete(producerId);
 
       // ✅ Notify other peers with consistent event
-      io.to(roomId).emit("producer-closed", {
+      // Include userId if available (should always be available)
+      const closeEvent: any = {
         producerId,
         peerId: socket.id,
-        userId: peer.userId || socket.id,
         isScreenShare,
         kind,
-      });
+      };
+
+      if (peer.userId) {
+        closeEvent.userId = peer.userId;
+      }
+
+      io.to(roomId).emit("producer-closed", closeEvent);
 
       const emoji = kind === "audio" ? "🎤" : isScreenShare ? "🖥️" : "📹";
       console.log(
@@ -2404,12 +2491,17 @@ io.on("connection", (socket) => {
 
       // ✅ Emit consistent "producer-closed" event (same as camera)
       // This ensures all media removal follows the same code path
-      io.to(roomId).emit("producer-closed", {
+      const closeEvent: any = {
         producerId,
         peerId: socket.id,
-        userId: peer.userId || socket.id,
         isScreenShare, // Flag to differentiate screen share from camera
-      });
+      };
+
+      if (peer.userId) {
+        closeEvent.userId = peer.userId;
+      }
+
+      io.to(roomId).emit("producer-closed", closeEvent);
 
       const emoji = isScreenShare ? "🖥️" : "🔴";
       console.log(
@@ -3049,18 +3141,20 @@ io.on("connection", (socket) => {
       peer.isHost = true;
       console.log(`👑 Made ${peer.name} a host`);
 
-      // Update participant list
-      const participants = Array.from(room.peers.values()).map((p) => ({
-        id: p.userId || p.socketId,
-        name: p.name,
-        imageUrl: p.imageUrl,
-        isAudioMuted: false,
-        isVideoPaused: false,
-        isHost: p.isHost || false,
-        isCoHost: p.isCoHost || false,
-        audioLocked: false,
-        screenShareLocked: false,
-      }));
+      // Update participant list (filter out peers without userId)
+      const participants = Array.from(room.peers.values())
+        .filter((p) => p.userId)
+        .map((p) => ({
+          id: p.userId!,
+          name: p.name || "Unknown",
+          imageUrl: p.imageUrl,
+          isAudioMuted: false,
+          isVideoPaused: false,
+          isHost: p.isHost || false,
+          isCoHost: p.isCoHost || false,
+          audioLocked: false,
+          screenShareLocked: false,
+        }));
       io.to(roomId).emit("participant-list-update", participants);
     } catch (err) {
       console.error("Error making host:", err);
@@ -3088,18 +3182,20 @@ io.on("connection", (socket) => {
       peer.isHost = false;
       console.log(`👤 Removed host status from ${peer.name}`);
 
-      // Update participant list
-      const participants = Array.from(room.peers.values()).map((p) => ({
-        id: p.userId || p.socketId,
-        name: p.name,
-        imageUrl: p.imageUrl,
-        isAudioMuted: false,
-        isVideoPaused: false,
-        isHost: p.isHost || false,
-        isCoHost: p.isCoHost || false,
-        audioLocked: false,
-        screenShareLocked: false,
-      }));
+      // Update participant list (filter out peers without userId)
+      const participants = Array.from(room.peers.values())
+        .filter((p) => p.userId)
+        .map((p) => ({
+          id: p.userId!,
+          name: p.name || "Unknown",
+          imageUrl: p.imageUrl,
+          isAudioMuted: false,
+          isVideoPaused: false,
+          isHost: p.isHost || false,
+          isCoHost: p.isCoHost || false,
+          audioLocked: false,
+          screenShareLocked: false,
+        }));
       io.to(roomId).emit("participant-list-update", participants);
     } catch (err) {
       console.error("Error removing host:", err);
@@ -3151,16 +3247,20 @@ io.on("connection", (socket) => {
         if (!room) continue;
 
         // Update participant list with remaining users
-        const participants = Array.from(room.peers.values()).map((p) => ({
-          id: p.userId || p.socketId,
-          name: p.name,
-          imageUrl: p.imageUrl,
-          isAudioMuted: false,
-          isVideoPaused: false,
-          isHost: p.isHost || false,
-          audioLocked: false,
-          screenShareLocked: false,
-        }));
+        // Filter out any peers without userId (shouldn't happen with new validation)
+        const participants = Array.from(room.peers.values())
+          .filter((p) => p.userId) // Only include properly identified peers
+          .map((p) => ({
+            id: p.userId!,
+            name: p.name || "Unknown",
+            imageUrl: p.imageUrl,
+            isAudioMuted: false,
+            isVideoPaused: false,
+            isHost: p.isHost || false,
+            isCoHost: p.isCoHost || false,
+            audioLocked: false,
+            screenShareLocked: false,
+          }));
 
         if (participants.length > 0) {
           io.to(roomId).emit("participant-list-update", participants);
