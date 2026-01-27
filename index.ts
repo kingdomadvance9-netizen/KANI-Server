@@ -3,7 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
-import { prisma } from "./prisma";
+import { prisma, startHeartbeat } from "./prisma";
 import { createMediaRouter, mediaRouter } from "./mediasoup/router";
 import {
   getOrCreateRoom,
@@ -43,6 +43,108 @@ app.get("/", (req, res) => {
 
 // M-Pesa API routes
 app.use("/api/mpesa", mpesaRoutes);
+
+/* =========================
+   MEETING CREATION API
+   ✅ CRITICAL FIX: Create meeting in database BEFORE any join
+========================= */
+
+// Create a new meeting
+app.post("/api/meetings", async (req, res) => {
+  try {
+    const { id, userId, description, startsAt } = req.body;
+
+    // Validate required fields
+    if (!id || !userId) {
+      return res.status(400).json({
+        error: "Missing required fields: id and userId are required",
+      });
+    }
+
+    // Check if meeting already exists
+    const existingMeeting = await prisma.room.findUnique({
+      where: { id },
+    });
+
+    if (existingMeeting) {
+      return res.status(409).json({
+        error: "Meeting with this ID already exists",
+        meeting: existingMeeting,
+      });
+    }
+
+    // ✅ Create meeting in database with creator
+    const meeting = await prisma.room.create({
+      data: {
+        id,
+        creatorId: userId,
+      },
+    });
+
+    console.log(`📝 Meeting created: ${id} by ${userId}`);
+
+    res.status(201).json({
+      success: true,
+      meeting: {
+        id: meeting.id,
+        creatorId: meeting.creatorId,
+        createdAt: meeting.createdAt,
+      },
+    });
+  } catch (error: any) {
+    console.error("❌ Error creating meeting:", error);
+    res.status(500).json({
+      error: "Failed to create meeting",
+      message: error.message,
+    });
+  }
+});
+
+// Get meeting details
+app.get("/api/meetings/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const meeting = await prisma.room.findUnique({
+      where: { id },
+      include: {
+        participants: {
+          where: { isConnected: true },
+          select: {
+            userId: true,
+            name: true,
+            imageUrl: true,
+            role: true,
+            isAudioMuted: true,
+            isVideoPaused: true,
+          },
+        },
+      },
+    });
+
+    if (!meeting) {
+      return res.status(404).json({
+        error: "Meeting not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      meeting: {
+        id: meeting.id,
+        creatorId: meeting.creatorId,
+        createdAt: meeting.createdAt,
+        participants: meeting.participants,
+      },
+    });
+  } catch (error: any) {
+    console.error("❌ Error fetching meeting:", error);
+    res.status(500).json({
+      error: "Failed to fetch meeting",
+      message: error.message,
+    });
+  }
+});
 
 // Debug endpoint to inspect room state
 app.get("/debug/room/:roomId", async (req, res) => {
@@ -104,6 +206,8 @@ const recordings = new Map<string, { startTime: number }>();
 (async () => {
   try {
     await createMediaRouter();
+    // ✅ Start database heartbeat after successful initialization
+    startHeartbeat();
   } catch (err) {
     console.error("🛑 Mediasoup Bootstrap Failed:", err);
   }
@@ -2045,13 +2149,9 @@ io.on("connection", (socket) => {
           isCoHost: currentPeer?.isCoHost,
         });
 
-        // ✅ Include persisted media state from database
-        let mediaState = {
-          isAudioMuted: false,
-          isVideoPaused: false,
-          audioLocked: false,
-          screenShareLocked: false,
-        };
+        // ✅ CRITICAL FIX: Only send media state for REJOINS, not first-time joins
+        // This respects user's current choice to join with media off
+        let mediaState = undefined;
 
         try {
           const dbParticipant = await prisma.roomParticipant.findUnique({
@@ -2063,14 +2163,18 @@ io.on("connection", (socket) => {
             },
           });
 
-          if (dbParticipant) {
+          // ONLY send media state if participant exists AND was previously connected
+          // This means they're REJOINING after a disconnect, so restore their state
+          if (dbParticipant && dbParticipant.isConnected === false) {
             mediaState = {
               isAudioMuted: dbParticipant.isAudioMuted,
               isVideoPaused: dbParticipant.isVideoPaused,
               audioLocked: dbParticipant.audioLocked ?? false,
               screenShareLocked: dbParticipant.screenShareLocked ?? false,
             };
-            console.log(`📊 Sending persisted media state to ${userName}:`, mediaState);
+            console.log(`📊 Rejoining user - sending persisted media state to ${userName}:`, mediaState);
+          } else {
+            console.log(`🆕 First-time join - letting ${userName} use their current preference (no backend state)`);
           }
         } catch (err) {
           console.error("❌ Error fetching media state:", err);
@@ -2081,7 +2185,7 @@ io.on("connection", (socket) => {
           existingProducers,
           isHost: currentPeer?.isHost || false,
           isCoHost: currentPeer?.isCoHost || false,
-          mediaState, // ✅ Include persisted media state
+          mediaState, // ✅ Only defined for rejoins, undefined for first joins
         });
       } catch (err: any) {
         console.error("Error joining mediasoup room:", err);
