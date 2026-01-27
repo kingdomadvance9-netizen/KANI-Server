@@ -157,7 +157,9 @@ exports.Prisma.RoomParticipantScalarFieldEnum = {
   isAudioMuted: 'isAudioMuted',
   isVideoPaused: 'isVideoPaused',
   audioLocked: 'audioLocked',
-  screenShareLocked: 'screenShareLocked'
+  screenShareLocked: 'screenShareLocked',
+  lastSeenAt: 'lastSeenAt',
+  isConnected: 'isConnected'
 };
 
 exports.Prisma.MpesaTransactionScalarFieldEnum = {

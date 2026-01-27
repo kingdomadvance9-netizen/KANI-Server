@@ -4169,6 +4169,8 @@ export namespace Prisma {
     isVideoPaused: boolean | null
     audioLocked: boolean | null
     screenShareLocked: boolean | null
+    lastSeenAt: Date | null
+    isConnected: boolean | null
   }
 
   export type RoomParticipantMaxAggregateOutputType = {
@@ -4182,6 +4184,8 @@ export namespace Prisma {
     isVideoPaused: boolean | null
     audioLocked: boolean | null
     screenShareLocked: boolean | null
+    lastSeenAt: Date | null
+    isConnected: boolean | null
   }
 
   export type RoomParticipantCountAggregateOutputType = {
@@ -4195,6 +4199,8 @@ export namespace Prisma {
     isVideoPaused: number
     audioLocked: number
     screenShareLocked: number
+    lastSeenAt: number
+    isConnected: number
     _all: number
   }
 
@@ -4210,6 +4216,8 @@ export namespace Prisma {
     isVideoPaused?: true
     audioLocked?: true
     screenShareLocked?: true
+    lastSeenAt?: true
+    isConnected?: true
   }
 
   export type RoomParticipantMaxAggregateInputType = {
@@ -4223,6 +4231,8 @@ export namespace Prisma {
     isVideoPaused?: true
     audioLocked?: true
     screenShareLocked?: true
+    lastSeenAt?: true
+    isConnected?: true
   }
 
   export type RoomParticipantCountAggregateInputType = {
@@ -4236,6 +4246,8 @@ export namespace Prisma {
     isVideoPaused?: true
     audioLocked?: true
     screenShareLocked?: true
+    lastSeenAt?: true
+    isConnected?: true
     _all?: true
   }
 
@@ -4322,6 +4334,8 @@ export namespace Prisma {
     isVideoPaused: boolean
     audioLocked: boolean
     screenShareLocked: boolean
+    lastSeenAt: Date
+    isConnected: boolean
     _count: RoomParticipantCountAggregateOutputType | null
     _min: RoomParticipantMinAggregateOutputType | null
     _max: RoomParticipantMaxAggregateOutputType | null
@@ -4352,6 +4366,8 @@ export namespace Prisma {
     isVideoPaused?: boolean
     audioLocked?: boolean
     screenShareLocked?: boolean
+    lastSeenAt?: boolean
+    isConnected?: boolean
     room?: boolean | RoomDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["roomParticipant"]>
 
@@ -4366,6 +4382,8 @@ export namespace Prisma {
     isVideoPaused?: boolean
     audioLocked?: boolean
     screenShareLocked?: boolean
+    lastSeenAt?: boolean
+    isConnected?: boolean
     room?: boolean | RoomDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["roomParticipant"]>
 
@@ -4380,6 +4398,8 @@ export namespace Prisma {
     isVideoPaused?: boolean
     audioLocked?: boolean
     screenShareLocked?: boolean
+    lastSeenAt?: boolean
+    isConnected?: boolean
   }
 
   export type RoomParticipantInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -4405,6 +4425,8 @@ export namespace Prisma {
       isVideoPaused: boolean
       audioLocked: boolean
       screenShareLocked: boolean
+      lastSeenAt: Date
+      isConnected: boolean
     }, ExtArgs["result"]["roomParticipant"]>
     composites: {}
   }
@@ -4809,6 +4831,8 @@ export namespace Prisma {
     readonly isVideoPaused: FieldRef<"RoomParticipant", 'Boolean'>
     readonly audioLocked: FieldRef<"RoomParticipant", 'Boolean'>
     readonly screenShareLocked: FieldRef<"RoomParticipant", 'Boolean'>
+    readonly lastSeenAt: FieldRef<"RoomParticipant", 'DateTime'>
+    readonly isConnected: FieldRef<"RoomParticipant", 'Boolean'>
   }
     
 
@@ -6271,7 +6295,9 @@ export namespace Prisma {
     isAudioMuted: 'isAudioMuted',
     isVideoPaused: 'isVideoPaused',
     audioLocked: 'audioLocked',
-    screenShareLocked: 'screenShareLocked'
+    screenShareLocked: 'screenShareLocked',
+    lastSeenAt: 'lastSeenAt',
+    isConnected: 'isConnected'
   };
 
   export type RoomParticipantScalarFieldEnum = (typeof RoomParticipantScalarFieldEnum)[keyof typeof RoomParticipantScalarFieldEnum]
@@ -6601,6 +6627,8 @@ export namespace Prisma {
     isVideoPaused?: BoolFilter<"RoomParticipant"> | boolean
     audioLocked?: BoolFilter<"RoomParticipant"> | boolean
     screenShareLocked?: BoolFilter<"RoomParticipant"> | boolean
+    lastSeenAt?: DateTimeFilter<"RoomParticipant"> | Date | string
+    isConnected?: BoolFilter<"RoomParticipant"> | boolean
     room?: XOR<RoomRelationFilter, RoomWhereInput>
   }
 
@@ -6615,6 +6643,8 @@ export namespace Prisma {
     isVideoPaused?: SortOrder
     audioLocked?: SortOrder
     screenShareLocked?: SortOrder
+    lastSeenAt?: SortOrder
+    isConnected?: SortOrder
     room?: RoomOrderByWithRelationInput
   }
 
@@ -6633,6 +6663,8 @@ export namespace Prisma {
     isVideoPaused?: BoolFilter<"RoomParticipant"> | boolean
     audioLocked?: BoolFilter<"RoomParticipant"> | boolean
     screenShareLocked?: BoolFilter<"RoomParticipant"> | boolean
+    lastSeenAt?: DateTimeFilter<"RoomParticipant"> | Date | string
+    isConnected?: BoolFilter<"RoomParticipant"> | boolean
     room?: XOR<RoomRelationFilter, RoomWhereInput>
   }, "id" | "roomId_userId">
 
@@ -6647,6 +6679,8 @@ export namespace Prisma {
     isVideoPaused?: SortOrder
     audioLocked?: SortOrder
     screenShareLocked?: SortOrder
+    lastSeenAt?: SortOrder
+    isConnected?: SortOrder
     _count?: RoomParticipantCountOrderByAggregateInput
     _max?: RoomParticipantMaxOrderByAggregateInput
     _min?: RoomParticipantMinOrderByAggregateInput
@@ -6666,6 +6700,8 @@ export namespace Prisma {
     isVideoPaused?: BoolWithAggregatesFilter<"RoomParticipant"> | boolean
     audioLocked?: BoolWithAggregatesFilter<"RoomParticipant"> | boolean
     screenShareLocked?: BoolWithAggregatesFilter<"RoomParticipant"> | boolean
+    lastSeenAt?: DateTimeWithAggregatesFilter<"RoomParticipant"> | Date | string
+    isConnected?: BoolWithAggregatesFilter<"RoomParticipant"> | boolean
   }
 
   export type MpesaTransactionWhereInput = {
@@ -6982,6 +7018,8 @@ export namespace Prisma {
     isVideoPaused?: boolean
     audioLocked?: boolean
     screenShareLocked?: boolean
+    lastSeenAt?: Date | string
+    isConnected?: boolean
     room: RoomCreateNestedOneWithoutParticipantsInput
   }
 
@@ -6996,6 +7034,8 @@ export namespace Prisma {
     isVideoPaused?: boolean
     audioLocked?: boolean
     screenShareLocked?: boolean
+    lastSeenAt?: Date | string
+    isConnected?: boolean
   }
 
   export type RoomParticipantUpdateInput = {
@@ -7008,6 +7048,8 @@ export namespace Prisma {
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
     audioLocked?: BoolFieldUpdateOperationsInput | boolean
     screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    isConnected?: BoolFieldUpdateOperationsInput | boolean
     room?: RoomUpdateOneRequiredWithoutParticipantsNestedInput
   }
 
@@ -7022,6 +7064,8 @@ export namespace Prisma {
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
     audioLocked?: BoolFieldUpdateOperationsInput | boolean
     screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    isConnected?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type RoomParticipantCreateManyInput = {
@@ -7035,6 +7079,8 @@ export namespace Prisma {
     isVideoPaused?: boolean
     audioLocked?: boolean
     screenShareLocked?: boolean
+    lastSeenAt?: Date | string
+    isConnected?: boolean
   }
 
   export type RoomParticipantUpdateManyMutationInput = {
@@ -7047,6 +7093,8 @@ export namespace Prisma {
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
     audioLocked?: BoolFieldUpdateOperationsInput | boolean
     screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    isConnected?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type RoomParticipantUncheckedUpdateManyInput = {
@@ -7060,6 +7108,8 @@ export namespace Prisma {
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
     audioLocked?: BoolFieldUpdateOperationsInput | boolean
     screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    isConnected?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type MpesaTransactionCreateInput = {
@@ -7459,6 +7509,8 @@ export namespace Prisma {
     isVideoPaused?: SortOrder
     audioLocked?: SortOrder
     screenShareLocked?: SortOrder
+    lastSeenAt?: SortOrder
+    isConnected?: SortOrder
   }
 
   export type RoomParticipantMaxOrderByAggregateInput = {
@@ -7472,6 +7524,8 @@ export namespace Prisma {
     isVideoPaused?: SortOrder
     audioLocked?: SortOrder
     screenShareLocked?: SortOrder
+    lastSeenAt?: SortOrder
+    isConnected?: SortOrder
   }
 
   export type RoomParticipantMinOrderByAggregateInput = {
@@ -7485,6 +7539,8 @@ export namespace Prisma {
     isVideoPaused?: SortOrder
     audioLocked?: SortOrder
     screenShareLocked?: SortOrder
+    lastSeenAt?: SortOrder
+    isConnected?: SortOrder
   }
 
   export type DecimalFilter<$PrismaModel = never> = {
@@ -8307,6 +8363,8 @@ export namespace Prisma {
     isVideoPaused?: boolean
     audioLocked?: boolean
     screenShareLocked?: boolean
+    lastSeenAt?: Date | string
+    isConnected?: boolean
   }
 
   export type RoomParticipantUncheckedCreateWithoutRoomInput = {
@@ -8319,6 +8377,8 @@ export namespace Prisma {
     isVideoPaused?: boolean
     audioLocked?: boolean
     screenShareLocked?: boolean
+    lastSeenAt?: Date | string
+    isConnected?: boolean
   }
 
   export type RoomParticipantCreateOrConnectWithoutRoomInput = {
@@ -8361,6 +8421,8 @@ export namespace Prisma {
     isVideoPaused?: BoolFilter<"RoomParticipant"> | boolean
     audioLocked?: BoolFilter<"RoomParticipant"> | boolean
     screenShareLocked?: BoolFilter<"RoomParticipant"> | boolean
+    lastSeenAt?: DateTimeFilter<"RoomParticipant"> | Date | string
+    isConnected?: BoolFilter<"RoomParticipant"> | boolean
   }
 
   export type RoomCreateWithoutParticipantsInput = {
@@ -8485,6 +8547,8 @@ export namespace Prisma {
     isVideoPaused?: boolean
     audioLocked?: boolean
     screenShareLocked?: boolean
+    lastSeenAt?: Date | string
+    isConnected?: boolean
   }
 
   export type RoomParticipantUpdateWithoutRoomInput = {
@@ -8497,6 +8561,8 @@ export namespace Prisma {
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
     audioLocked?: BoolFieldUpdateOperationsInput | boolean
     screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    isConnected?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type RoomParticipantUncheckedUpdateWithoutRoomInput = {
@@ -8509,6 +8575,8 @@ export namespace Prisma {
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
     audioLocked?: BoolFieldUpdateOperationsInput | boolean
     screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    isConnected?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type RoomParticipantUncheckedUpdateManyWithoutRoomInput = {
@@ -8521,6 +8589,8 @@ export namespace Prisma {
     isVideoPaused?: BoolFieldUpdateOperationsInput | boolean
     audioLocked?: BoolFieldUpdateOperationsInput | boolean
     screenShareLocked?: BoolFieldUpdateOperationsInput | boolean
+    lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    isConnected?: BoolFieldUpdateOperationsInput | boolean
   }
 
 

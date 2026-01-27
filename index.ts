@@ -109,6 +109,37 @@ const recordings = new Map<string, { startTime: number }>();
   }
 })();
 
+/* =========================
+   STALE PARTICIPANT CLEANUP
+   Removes participants who haven't been seen in over 1 hour
+========================= */
+const cleanupStaleParticipants = async () => {
+  try {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    const deletedCount = await prisma.roomParticipant.deleteMany({
+      where: {
+        isConnected: false,
+        lastSeenAt: {
+          lt: oneHourAgo,
+        },
+      },
+    });
+
+    if (deletedCount.count > 0) {
+      console.log(`🧹 Cleaned up ${deletedCount.count} stale participants (disconnected > 1 hour)`);
+    }
+  } catch (err) {
+    console.error("❌ Error cleaning up stale participants:", err);
+  }
+};
+
+// Run cleanup every 15 minutes
+setInterval(cleanupStaleParticipants, 15 * 60 * 1000);
+
+// Run cleanup once on startup
+cleanupStaleParticipants();
+
 io.on("connection", (socket) => {
   console.log("✅ user connected:", socket.id);
 
@@ -223,9 +254,9 @@ io.on("connection", (socket) => {
           isCoHost: peer.isCoHost,
         });
 
-        // Fetch all active participants
+        // Fetch all active (connected) participants
         const participants = await prisma.roomParticipant.findMany({
-          where: { roomId },
+          where: { roomId, isConnected: true },
         });
 
         console.log(
@@ -681,7 +712,7 @@ io.on("connection", (socket) => {
 
       // 8. Send updated participant list to all (more efficient than individual state-changed events)
       const allParticipants = await prisma.roomParticipant.findMany({
-        where: { roomId },
+        where: { roomId, isConnected: true },
       });
       io.to(roomId).emit(
         "participant-list-update",
@@ -787,7 +818,7 @@ io.on("connection", (socket) => {
 
       // 8. Send updated participant list to all
       const allParticipants = await prisma.roomParticipant.findMany({
-        where: { roomId },
+        where: { roomId, isConnected: true },
       });
       io.to(roomId).emit(
         "participant-list-update",
@@ -893,7 +924,7 @@ io.on("connection", (socket) => {
 
       // 8. Send updated participant list to all
       const allParticipants = await prisma.roomParticipant.findMany({
-        where: { roomId },
+        where: { roomId, isConnected: true },
       });
       io.to(roomId).emit(
         "participant-list-update",
@@ -998,7 +1029,7 @@ io.on("connection", (socket) => {
 
       // 8. Send updated participant list to all
       const allParticipants = await prisma.roomParticipant.findMany({
-        where: { roomId },
+        where: { roomId, isConnected: true },
       });
       io.to(roomId).emit(
         "participant-list-update",
@@ -1104,7 +1135,7 @@ io.on("connection", (socket) => {
 
       // 8. Refresh participant list
       const allParticipants = await prisma.roomParticipant.findMany({
-        where: { roomId },
+        where: { roomId, isConnected: true },
       });
       io.to(roomId).emit(
         "participant-list-update",
@@ -1210,7 +1241,7 @@ io.on("connection", (socket) => {
 
       // 8. Refresh participant list
       const allParticipants = await prisma.roomParticipant.findMany({
-        where: { roomId },
+        where: { roomId, isConnected: true },
       });
       io.to(roomId).emit(
         "participant-list-update",
@@ -1337,7 +1368,7 @@ io.on("connection", (socket) => {
 
         // 6. Send updated participant list to ensure lock state is synced
         const allParticipants = await prisma.roomParticipant.findMany({
-          where: { roomId },
+          where: { roomId, isConnected: true },
         });
         io.to(roomId).emit(
           "participant-list-update",
@@ -1562,7 +1593,7 @@ io.on("connection", (socket) => {
 
         // 6. Broadcast updated participant list
         const participants = await prisma.roomParticipant.findMany({
-          where: { roomId },
+          where: { roomId, isConnected: true },
         });
 
         io.to(roomId).emit(
@@ -1674,6 +1705,7 @@ io.on("connection", (socket) => {
             });
 
             if (!dbRoom) {
+              // Room doesn't exist - create it
               dbRoom = await prisma.room.create({
                 data: {
                   id: roomId,
@@ -1681,8 +1713,32 @@ io.on("connection", (socket) => {
                 },
               });
               console.log(
-                `🏠 Created DB room ${roomId} with creator ${userId}`
+                `🏠 Created DB room ${roomId} with creator ${userId} (isCreator flag: ${isCreator})`
               );
+            } else if (isCreator && dbRoom.creatorId !== userId) {
+              // ✅ NEW: Room exists but this user claims to be the creator
+              // This handles the case where someone joined before the actual creator
+              // Update the room to have the correct creator
+              const oldCreatorId = dbRoom.creatorId;
+              console.log(
+                `🔄 Updating room ${roomId} creator from ${oldCreatorId} to ${userId} (actual creator joined)`
+              );
+              dbRoom = await prisma.room.update({
+                where: { id: roomId },
+                data: { creatorId: userId },
+              });
+
+              // Demote the previous "creator" to participant
+              await prisma.roomParticipant.updateMany({
+                where: {
+                  roomId,
+                  userId: oldCreatorId,
+                  role: "HOST",
+                },
+                data: { role: "PARTICIPANT" },
+              });
+
+              console.log(`⬇️ Demoted ${oldCreatorId} from HOST to PARTICIPANT`);
             }
 
             // Check if user is already a participant in DB
@@ -1705,11 +1761,13 @@ io.on("connection", (socket) => {
                   name: userName,
                   imageUrl: userImageUrl,
                   role,
+                  isConnected: true,
+                  lastSeenAt: new Date(),
                 },
               });
               console.log(`✅ ${userName} joined as ${role} (NEW in DB)`);
             } else {
-              // Update existing participant info
+              // Update existing participant info and mark as connected
               dbParticipant = await prisma.roomParticipant.update({
                 where: {
                   roomId_userId: {
@@ -1720,9 +1778,11 @@ io.on("connection", (socket) => {
                 data: {
                   name: userName,
                   imageUrl: userImageUrl,
+                  isConnected: true,
+                  lastSeenAt: new Date(),
                 },
               });
-              console.log(`♻️ ${userName} rejoined (EXISTING in DB)`);
+              console.log(`♻️ ${userName} rejoined (EXISTING in DB) - media state preserved`);
             }
           } catch (dbError) {
             console.error("❌ Database error:", dbError);
@@ -1890,7 +1950,7 @@ io.on("connection", (socket) => {
         let participants;
         try {
           const dbParticipants = await prisma.roomParticipant.findMany({
-            where: { roomId },
+            where: { roomId, isConnected: true },
           });
 
           if (dbParticipants.length > 0) {
@@ -1985,11 +2045,43 @@ io.on("connection", (socket) => {
           isCoHost: currentPeer?.isCoHost,
         });
 
+        // ✅ Include persisted media state from database
+        let mediaState = {
+          isAudioMuted: false,
+          isVideoPaused: false,
+          audioLocked: false,
+          screenShareLocked: false,
+        };
+
+        try {
+          const dbParticipant = await prisma.roomParticipant.findUnique({
+            where: {
+              roomId_userId: {
+                roomId,
+                userId,
+              },
+            },
+          });
+
+          if (dbParticipant) {
+            mediaState = {
+              isAudioMuted: dbParticipant.isAudioMuted,
+              isVideoPaused: dbParticipant.isVideoPaused,
+              audioLocked: dbParticipant.audioLocked ?? false,
+              screenShareLocked: dbParticipant.screenShareLocked ?? false,
+            };
+            console.log(`📊 Sending persisted media state to ${userName}:`, mediaState);
+          }
+        } catch (err) {
+          console.error("❌ Error fetching media state:", err);
+        }
+
         cb({
           success: true,
           existingProducers,
           isHost: currentPeer?.isHost || false,
           isCoHost: currentPeer?.isCoHost || false,
+          mediaState, // ✅ Include persisted media state
         });
       } catch (err: any) {
         console.error("Error joining mediasoup room:", err);
@@ -2703,7 +2795,7 @@ io.on("connection", (socket) => {
 
       // 11. Refresh participant list for all
       const participants = await prisma.roomParticipant.findMany({
-        where: { roomId },
+        where: { roomId, isConnected: true },
       });
       io.to(roomId).emit(
         "participant-list-update",
@@ -2860,7 +2952,7 @@ io.on("connection", (socket) => {
 
       // Refresh participant list for all
       const participants = await prisma.roomParticipant.findMany({
-        where: { roomId },
+        where: { roomId, isConnected: true },
       });
       io.to(roomId).emit(
         "participant-list-update",
@@ -3225,20 +3317,24 @@ io.on("connection", (socket) => {
         // Remove peer from mediasoup
         removePeerFromRoom(roomId, socket.id);
 
-        // 🔥 DELETE FROM DATABASE - This is critical!
+        // ✅ MARK AS DISCONNECTED (don't delete to preserve media state for rejoin)
         if (userId) {
           try {
-            await prisma.roomParticipant.delete({
+            await prisma.roomParticipant.update({
               where: {
                 roomId_userId: {
                   roomId,
                   userId,
                 },
               },
+              data: {
+                isConnected: false,
+                lastSeenAt: new Date(),
+              },
             });
-            console.log(`🗑️ Deleted ${userId} from database for room ${roomId}`);
+            console.log(`🔌 Marked ${userId} as disconnected for room ${roomId} (media state preserved)`);
           } catch (dbErr) {
-            console.error("Error deleting participant from DB:", dbErr);
+            console.error("Error updating participant disconnect status:", dbErr);
           }
         }
 

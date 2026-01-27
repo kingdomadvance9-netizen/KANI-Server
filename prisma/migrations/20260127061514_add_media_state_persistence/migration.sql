@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "RoomParticipant" ADD COLUMN     "isConnected" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN     "lastSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
