@@ -65,6 +65,8 @@ model RoomParticipant {
   isVideoPaused      Boolean  @default(false)
   audioLocked        Boolean  @default(false)        // Cannot unmute when true
   screenShareLocked  Boolean  @default(false)        // Cannot screen share when true
+  lastSeenAt         DateTime @default(now())        // Track when participant was last active
+  isConnected        Boolean  @default(true)         // Whether participant is currently connected
 
   room               Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
 

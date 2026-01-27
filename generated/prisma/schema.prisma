@@ -52,16 +52,18 @@ model Room {
 }
 
 model RoomParticipant {
-  id                String  @id @default(uuid())
+  id                String   @id @default(uuid())
   roomId            String
   userId            String // Clerk User ID
   name              String
   imageUrl          String?
-  role              String  @default("PARTICIPANT") // "HOST" or "PARTICIPANT" or "COHOST"
-  isAudioMuted      Boolean @default(false)
-  isVideoPaused     Boolean @default(false)
-  audioLocked       Boolean @default(false) // Cannot unmute when true
-  screenShareLocked Boolean @default(false) // Cannot screen share when true
+  role              String   @default("PARTICIPANT") // "HOST" or "PARTICIPANT" or "COHOST"
+  isAudioMuted      Boolean  @default(false)
+  isVideoPaused     Boolean  @default(false)
+  audioLocked       Boolean  @default(false) // Cannot unmute when true
+  screenShareLocked Boolean  @default(false) // Cannot screen share when true
+  lastSeenAt        DateTime @default(now()) // Track when participant was last active
+  isConnected       Boolean  @default(true) // Whether participant is currently connected
 
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
